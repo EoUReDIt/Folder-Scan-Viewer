@@ -1,0 +1,557 @@
+import { AppConfig, FileEntry } from '../types/foldary';
+
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+function ago(ms: number): number {
+  return Date.now() - ms;
+}
+
+const DEMO_HERO_BANNER = '/src/assets/images/demo_hero_banner_1795658588148.jpg';
+const DEMO_UI_WIREFRAME = '/src/assets/images/demo_ui_wireframe_1795658591188.jpg';
+const DEMO_BRAND_MARK = '/src/assets/images/demo_brand_mark_1795658595392.jpg';
+
+export const DEFAULT_APP_CONFIG: AppConfig = {
+  defaultFolderId: 'fav_projects',
+  startupBehavior: 'per_folder',
+  globalSortBy: 'dateModified',
+  globalSortOrder: 'desc',
+  includeSubfolders: true,
+  showHiddenFiles: false,
+  theme: 'light',
+  favorites: [
+    {
+      id: 'fav_projects',
+      name: 'Projects',
+      path: 'C:\\Users\\You\\Projects',
+      sortBy: 'dateModified',
+      sortOrder: 'desc',
+      foldersFirst: true,
+      sourceType: 'demo',
+    },
+    {
+      id: 'fav_downloads',
+      name: 'Downloads',
+      path: 'C:\\Users\\You\\Downloads',
+      sortBy: 'dateModified',
+      sortOrder: 'desc',
+      foldersFirst: false,
+      sourceType: 'demo',
+    },
+    {
+      id: 'fav_invoices',
+      name: 'Invoices',
+      path: 'C:\\Users\\You\\Documents\\Invoices',
+      sortBy: 'name',
+      sortOrder: 'asc',
+      foldersFirst: true,
+      sourceType: 'demo',
+    },
+  ],
+};
+
+function makeEntry(
+  rootPath: string,
+  partial: {
+    id: string;
+    name: string;
+    isFolder: boolean;
+    extension: string;
+    category: FileEntry['category'];
+    parentPath: string;
+    dateModified: number;
+    size: number;
+    isHidden?: boolean;
+    previewUrl?: string;
+    textSnippet?: string;
+    dimensions?: string;
+    duration?: string;
+  }
+): FileEntry {
+  const cleanParent = partial.parentPath.replace(/^\/+|\/+$/g, '');
+  const entryPath = cleanParent ? `${cleanParent}/${partial.name}` : partial.name;
+  const relativePath = cleanParent
+    ? `.\\${cleanParent.split('/').join('\\')}\\`
+    : '.\\';
+  const fullPath = `${rootPath}\\${entryPath.split('/').join('\\')}`;
+
+  return {
+    id: partial.id,
+    name: partial.name,
+    isFolder: partial.isFolder,
+    extension: partial.extension,
+    category: partial.category,
+    relativePath,
+    parentPath: cleanParent,
+    entryPath,
+    fullPath,
+    dateModified: partial.dateModified,
+    size: partial.size,
+    isHidden: Boolean(partial.isHidden),
+    previewUrl: partial.previewUrl,
+    textSnippet: partial.textSnippet,
+    dimensions: partial.dimensions,
+    duration: partial.duration,
+  };
+}
+
+export function buildDemoWorkspace(): Record<string, FileEntry[]> {
+  const projectsRoot = 'C:\\Users\\You\\Projects';
+  const downloadsRoot = 'C:\\Users\\You\\Downloads';
+  const invoicesRoot = 'C:\\Users\\You\\Documents\\Invoices';
+
+  const projects: FileEntry[] = [
+    makeEntry(projectsRoot, {
+      id: 'prj_dir_assets',
+      name: 'Assets',
+      isFolder: true,
+      extension: '',
+      category: 'folder',
+      parentPath: '',
+      dateModified: ago(52 * MINUTE),
+      size: 0,
+    }),
+    makeEntry(projectsRoot, {
+      id: 'prj_dir_reports',
+      name: 'Reports',
+      isFolder: true,
+      extension: '',
+      category: 'folder',
+      parentPath: '',
+      dateModified: ago(2 * MINUTE),
+      size: 0,
+    }),
+    makeEntry(projectsRoot, {
+      id: 'prj_dir_design',
+      name: 'Design',
+      isFolder: true,
+      extension: '',
+      category: 'folder',
+      parentPath: '',
+      dateModified: ago(6 * HOUR),
+      size: 0,
+    }),
+    makeEntry(projectsRoot, {
+      id: 'prj_dir_media',
+      name: 'Media',
+      isFolder: true,
+      extension: '',
+      category: 'folder',
+      parentPath: '',
+      dateModified: ago(4 * DAY),
+      size: 0,
+    }),
+    makeEntry(projectsRoot, {
+      id: 'prj_dir_src',
+      name: 'src',
+      isFolder: true,
+      extension: '',
+      category: 'folder',
+      parentPath: '',
+      dateModified: ago(18 * MINUTE),
+      size: 0,
+    }),
+    makeEntry(projectsRoot, {
+      id: 'prj_q4_report',
+      name: 'Q4_Report.pdf',
+      isFolder: false,
+      extension: 'pdf',
+      category: 'document',
+      parentPath: 'Reports',
+      dateModified: ago(2 * MINUTE),
+      size: 1_264_800,
+      textSnippet:
+        'Q4 Product & Desktop Utility Review\n\nSummary:\n- Direct-to-folder startup cut average file lookup time by 64%.\n- Per-folder sort memory eliminated repeated column toggling across Downloads and Projects.\n- Next milestone: package React UI into Tauri v2 desktop binary with Rust walkdir indexing.',
+    }),
+    makeEntry(projectsRoot, {
+      id: 'prj_indexer_rs',
+      name: 'indexer.rs',
+      isFolder: false,
+      extension: 'rs',
+      category: 'document',
+      parentPath: 'src',
+      dateModified: ago(18 * MINUTE),
+      size: 8_420,
+      textSnippet: `use walkdir::WalkDir;\nuse serde::Serialize;\n\n#[derive(Serialize)]\npub struct FileEntry {\n    pub name: String,\n    pub relative_path: String,\n    pub is_dir: bool,\n    pub size: u64,\n    pub modified_ms: i64,\n}\n\npub fn scan_folder(root: &str, recursive: bool) -> Vec<FileEntry> {\n    let max_depth = if recursive { usize::MAX } else { 1 };\n    WalkDir::new(root)\n        .min_depth(1)\n        .max_depth(max_depth)\n        .into_iter()\n        .filter_map(|e| e.ok())\n        .map(|entry| /* serialize metadata */ todo!())\n        .collect()\n}`,
+    }),
+    makeEntry(projectsRoot, {
+      id: 'prj_hero_banner',
+      name: 'hero_banner.png',
+      isFolder: false,
+      extension: 'png',
+      category: 'picture',
+      parentPath: 'Assets',
+      dateModified: ago(22 * HOUR),
+      size: 4_718_592,
+      previewUrl: DEMO_HERO_BANNER,
+      dimensions: '2560 × 1440 px',
+    }),
+    makeEntry(projectsRoot, {
+      id: 'prj_wireframe',
+      name: 'layout_blueprint.jpg',
+      isFolder: false,
+      extension: 'jpg',
+      category: 'picture',
+      parentPath: 'Design',
+      dateModified: ago(6 * HOUR),
+      size: 2_384_110,
+      previewUrl: DEMO_UI_WIREFRAME,
+      dimensions: '2048 × 1536 px',
+    }),
+    makeEntry(projectsRoot, {
+      id: 'prj_brand_mark',
+      name: 'foldary_logo_proof.webp',
+      isFolder: false,
+      extension: 'webp',
+      category: 'picture',
+      parentPath: 'Assets',
+      dateModified: ago(2 * DAY),
+      size: 912_400,
+      previewUrl: DEMO_BRAND_MARK,
+      dimensions: '1600 × 1600 px',
+    }),
+    makeEntry(projectsRoot, {
+      id: 'prj_notes',
+      name: 'notes.txt',
+      isFolder: false,
+      extension: 'txt',
+      category: 'document',
+      parentPath: '',
+      dateModified: ago(3 * DAY),
+      size: 12_480,
+      textSnippet: `Foldary Release Checklist\n=========================\n[x] Open directly into Default Folder on launch\n[x] Remember per-folder sortBy, sortOrder, and foldersFirst\n[x] Combine live search + type filter + recency filter + subfolder scope\n[ ] Bind global hotkey (Ctrl+Space) in Tauri tray daemon\n[ ] Hook notify crate for live FileSystemWatcher updates`,
+    }),
+    makeEntry(projectsRoot, {
+      id: 'prj_roadmap',
+      name: 'architecture_notes.md',
+      isFolder: false,
+      extension: 'md',
+      category: 'document',
+      parentPath: 'Reports',
+      dateModified: ago(5 * DAY),
+      size: 24_190,
+      textSnippet: `# Foldary Architecture\n\n## Core Separation\nKeep the UI layer completely decoupled from the OS filesystem adapter via \`FolderSource\`:\n\n1. **Web POC**: Demo workspace + browser directory picker.\n2. **Desktop Shell (Tauri)**: Invoke \`scan_folder\` and \`watch_folder\` IPC commands.\n3. **Config**: Local \`config.json\` persisted on every sort or favorite change.`,
+    }),
+    makeEntry(projectsRoot, {
+      id: 'prj_demo_capture',
+      name: 'launcher_demo_capture.mp4',
+      isFolder: false,
+      extension: 'mp4',
+      category: 'video',
+      parentPath: 'Media',
+      dateModified: ago(4 * DAY),
+      size: 38_420_000,
+      duration: '01:42 · 60fps · 1080p',
+    }),
+    makeEntry(projectsRoot, {
+      id: 'prj_ui_chime',
+      name: 'focus_chime_master.wav',
+      isFolder: false,
+      extension: 'wav',
+      category: 'audio',
+      parentPath: 'Media',
+      dateModified: ago(11 * DAY),
+      size: 3_190_400,
+      duration: '00:08 · 48kHz PCM',
+    }),
+    makeEntry(projectsRoot, {
+      id: 'prj_config_sample',
+      name: 'config.schema.json',
+      isFolder: false,
+      extension: 'json',
+      category: 'document',
+      parentPath: 'src',
+      dateModified: ago(14 * DAY),
+      size: 3_920,
+      textSnippet: `{\n  "defaultFolderId": "fav_projects",\n  "startupBehavior": "per_folder",\n  "includeSubfolders": true,\n  "favorites": [\n    { "id": "fav_projects", "name": "Projects", "sortBy": "dateModified", "sortOrder": "desc" }\n  ]\n}`,
+    }),
+    makeEntry(projectsRoot, {
+      id: 'prj_legacy_spec',
+      name: 'v1_sprint_retro.docx',
+      isFolder: false,
+      extension: 'docx',
+      category: 'document',
+      parentPath: 'Reports',
+      dateModified: ago(48 * DAY),
+      size: 486_200,
+      textSnippet:
+        'Sprint 1 Retrospective — Initial wireframes compared Listary’s floating bar against a persistent two-pane launcher with dedicated favorite folders.',
+    }),
+    makeEntry(projectsRoot, {
+      id: 'prj_assets_bundle',
+      name: 'release_v0.2_assets.zip',
+      isFolder: false,
+      extension: 'zip',
+      category: 'compressed',
+      parentPath: 'Assets',
+      dateModified: ago(5 * HOUR),
+      size: 14_820_400,
+    }),
+    makeEntry(projectsRoot, {
+      id: 'prj_hidden_env',
+      name: '.env.local',
+      isFolder: false,
+      extension: 'local',
+      category: 'document',
+      parentPath: '',
+      dateModified: ago(4 * HOUR),
+      size: 412,
+      isHidden: true,
+      textSnippet: `FOLDARY_CONFIG_PATH=~/.config/foldary/config.json\nFOLDARY_WATCH_DEBOUNCE_MS=150\nFOLDARY_MAX_INDEX_DEPTH=12`,
+    }),
+    makeEntry(projectsRoot, {
+      id: 'prj_hidden_gitignore',
+      name: '.gitignore',
+      isFolder: false,
+      extension: 'gitignore',
+      category: 'document',
+      parentPath: '',
+      dateModified: ago(19 * DAY),
+      size: 628,
+      isHidden: true,
+      textSnippet: `node_modules/\ndist/\ntarget/\n*.log\n.DS_Store\n.env.local`,
+    }),
+  ];
+
+  const downloads: FileEntry[] = [
+    makeEntry(downloadsRoot, {
+      id: 'dl_dir_installers',
+      name: 'Installers',
+      isFolder: true,
+      extension: '',
+      category: 'folder',
+      parentPath: '',
+      dateModified: ago(3 * HOUR),
+      size: 0,
+    }),
+    makeEntry(downloadsRoot, {
+      id: 'dl_dir_exports',
+      name: 'Figma Exports',
+      isFolder: true,
+      extension: '',
+      category: 'folder',
+      parentPath: '',
+      dateModified: ago(1 * DAY),
+      size: 0,
+    }),
+    makeEntry(downloadsRoot, {
+      id: 'dl_tauri_installer',
+      name: 'tauri-cli-2.1.0-x64.msi',
+      isFolder: false,
+      extension: 'msi',
+      category: 'other',
+      parentPath: 'Installers',
+      dateModified: ago(14 * MINUTE),
+      size: 28_940_288,
+    }),
+    makeEntry(downloadsRoot, {
+      id: 'dl_logo_export',
+      name: 'logo_concept_final.png',
+      isFolder: false,
+      extension: 'png',
+      category: 'picture',
+      parentPath: 'Figma Exports',
+      dateModified: ago(42 * MINUTE),
+      size: 1_842_300,
+      previewUrl: DEMO_BRAND_MARK,
+      dimensions: '1600 × 1600 px',
+    }),
+    makeEntry(downloadsRoot, {
+      id: 'dl_meeting_rec',
+      name: 'design_sync_2026_11_24.mp4',
+      isFolder: false,
+      extension: 'mp4',
+      category: 'video',
+      parentPath: '',
+      dateModified: ago(19 * HOUR),
+      size: 142_606_336,
+      duration: '14:28 · 1080p H.264',
+    }),
+    makeEntry(downloadsRoot, {
+      id: 'dl_podcast',
+      name: 'systems_craft_ep42.mp3',
+      isFolder: false,
+      extension: 'mp3',
+      category: 'audio',
+      parentPath: '',
+      dateModified: ago(2 * DAY),
+      size: 54_120_900,
+      duration: '38:15 · 192 kbps',
+    }),
+    makeEntry(downloadsRoot, {
+      id: 'dl_wireframe_sheet',
+      name: 'fluent_grid_reference.jpg',
+      isFolder: false,
+      extension: 'jpg',
+      category: 'picture',
+      parentPath: 'Figma Exports',
+      dateModified: ago(3 * DAY),
+      size: 3_102_400,
+      previewUrl: DEMO_UI_WIREFRAME,
+      dimensions: '2048 × 1536 px',
+    }),
+    makeEntry(downloadsRoot, {
+      id: 'dl_rust_book',
+      name: 'rust_async_patterns_2026.pdf',
+      isFolder: false,
+      extension: 'pdf',
+      category: 'document',
+      parentPath: '',
+      dateModified: ago(9 * DAY),
+      size: 6_845_120,
+      textSnippet:
+        'Chapter 4: High-Throughput Directory Walking & Debounced Filesystem Events on Windows NTFS.',
+    }),
+    makeEntry(downloadsRoot, {
+      id: 'dl_dataset',
+      name: 'benchmark_results_100k_files.csv',
+      isFolder: false,
+      extension: 'csv',
+      category: 'document',
+      parentPath: '',
+      dateModified: ago(16 * DAY),
+      size: 418_900,
+      textSnippet: `engine,file_count,cold_scan_ms,incremental_filter_ms\nwalkdir_rust,100000,148,1.8\ndotnet_enum,100000,132,2.1\nnode_fs_readdir,100000,490,4.5`,
+    }),
+    makeEntry(downloadsRoot, {
+      id: 'dl_archive',
+      name: 'win11_icons_bundle.zip',
+      isFolder: false,
+      extension: 'zip',
+      category: 'compressed',
+      parentPath: '',
+      dateModified: ago(62 * DAY),
+      size: 19_482_100,
+    }),
+    makeEntry(downloadsRoot, {
+      id: 'dl_hidden_zone',
+      name: '.crdownload_cache',
+      isFolder: false,
+      extension: 'crdownload_cache',
+      category: 'other',
+      parentPath: '',
+      dateModified: ago(30 * MINUTE),
+      size: 16_384,
+      isHidden: true,
+    }),
+  ];
+
+  const invoices: FileEntry[] = [
+    makeEntry(invoicesRoot, {
+      id: 'inv_dir_2026',
+      name: '2026',
+      isFolder: true,
+      extension: '',
+      category: 'folder',
+      parentPath: '',
+      dateModified: ago(1 * DAY),
+      size: 0,
+    }),
+    makeEntry(invoicesRoot, {
+      id: 'inv_dir_2025',
+      name: '2025',
+      isFolder: true,
+      extension: '',
+      category: 'folder',
+      parentPath: '',
+      dateModified: ago(180 * DAY),
+      size: 0,
+    }),
+    makeEntry(invoicesRoot, {
+      id: 'inv_2026_11',
+      name: 'INV-2026-11_CloudHosting.pdf',
+      isFolder: false,
+      extension: 'pdf',
+      category: 'document',
+      parentPath: '2026',
+      dateModified: ago(1 * DAY),
+      size: 248_900,
+      textSnippet: `INVOICE #INV-2026-11\nVendor: Northstar Cloud Infrastructure\nPeriod: Nov 1 – Nov 30, 2026\nTotal Due: $142.80 (Paid)`,
+    }),
+    makeEntry(invoicesRoot, {
+      id: 'inv_2026_10',
+      name: 'INV-2026-10_StudioLicense.pdf',
+      isFolder: false,
+      extension: 'pdf',
+      category: 'document',
+      parentPath: '2026',
+      dateModified: ago(24 * DAY),
+      size: 194_400,
+      textSnippet: `INVOICE #INV-2026-10\nVendor: JetBrains s.r.o.\nItem: All Products Pack Annual Renewal\nTotal Due: $289.00 (Paid)`,
+    }),
+    makeEntry(invoicesRoot, {
+      id: 'inv_2026_09',
+      name: 'INV-2026-09_HardwareUpgrade.pdf',
+      isFolder: false,
+      extension: 'pdf',
+      category: 'document',
+      parentPath: '2026',
+      dateModified: ago(55 * DAY),
+      size: 312_000,
+      textSnippet: `INVOICE #INV-2026-09\nItem: 4TB NVMe Gen5 SSD Workstation Drive\nTotal Due: $389.99 (Paid)`,
+    }),
+    makeEntry(invoicesRoot, {
+      id: 'inv_summary_csv',
+      name: '2026_Expenses_Ledger.csv',
+      isFolder: false,
+      extension: 'csv',
+      category: 'document',
+      parentPath: '',
+      dateModified: ago(2 * DAY),
+      size: 18_420,
+      textSnippet: `date,invoice_id,category,amount_usd,status\n2026-11-24,INV-2026-11,Infrastructure,142.80,Paid\n2026-11-01,INV-2026-10,Software,289.00,Paid\n2026-10-01,INV-2026-09,Hardware,389.99,Paid`,
+    }),
+    makeEntry(invoicesRoot, {
+      id: 'inv_desk_receipt',
+      name: 'workstation_receipt_photo.jpg',
+      isFolder: false,
+      extension: 'jpg',
+      category: 'picture',
+      parentPath: '2026',
+      dateModified: ago(5 * DAY),
+      size: 1_920_400,
+      previewUrl: DEMO_HERO_BANNER,
+      dimensions: '2560 × 1440 px',
+    }),
+    makeEntry(invoicesRoot, {
+      id: 'inv_2025_tax',
+      name: '2025_Annual_Tax_Summary.pdf',
+      isFolder: false,
+      extension: 'pdf',
+      category: 'document',
+      parentPath: '2025',
+      dateModified: ago(215 * DAY),
+      size: 1_480_200,
+      textSnippet:
+        '2025 Consolidated Annual Expense & Deduction Summary — Verified & Archived.',
+    }),
+    makeEntry(invoicesRoot, {
+      id: 'inv_2025_archive',
+      name: '2025_receipts_backup.7z',
+      isFolder: false,
+      extension: '7z',
+      category: 'compressed',
+      parentPath: '2025',
+      dateModified: ago(190 * DAY),
+      size: 11_640_800,
+    }),
+    makeEntry(invoicesRoot, {
+      id: 'inv_hidden_ds',
+      name: '.DS_Store',
+      isFolder: false,
+      extension: 'DS_Store',
+      category: 'other',
+      parentPath: '',
+      dateModified: ago(12 * DAY),
+      size: 6_148,
+      isHidden: true,
+    }),
+  ];
+
+  return {
+    fav_projects: projects,
+    fav_downloads: downloads,
+    fav_invoices: invoices,
+  };
+}

@@ -1,0 +1,8 @@
+{
+  "name": "Foldary",
+  "description": "A folder-first desktop file launcher and sorter proof of concept with per-folder persistent sorting, faceted sidebar filters, local folder mounting, quick file preview, and config.json portability.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
