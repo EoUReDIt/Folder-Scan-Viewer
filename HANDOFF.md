@@ -49,13 +49,16 @@ These are intentional web-sandbox constraints to replace once wrapped in a nativ
 
 The React UI is already cleanly separated from data adapters, making **Tauri v2** (Rust backend + this Vite frontend) the fastest path to native performance.
 
-### Step 1: Initialize Tauri Around This Repo
+### Step 1: Tauri v2 Shell & Manual NSIS Release Workflow (Already Scaffolded)
+A minimal Tauri v2 Windows shell (`src-tauri/`) targeting **NSIS `.exe` installers** and a manual GitHub Actions workflow (`.github/workflows/release.yml`) are already set up in this repo:
+- Run **Actions → Release Foldary (Windows NSIS Installer)** with `mode: version_bump_only` for a no-output version increase (commits synced versions across `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml` with no installer artifact).
+- Run with `mode: release_installer` to build the Windows NSIS `.exe` setup installer and publish a GitHub Release with `SHA256SUMS.txt`.
+
+To add native filesystem, dialog, opener, and global hotkey plugins next:
 ```bash
 npm install -D @tauri-apps/cli
 npm install @tauri-apps/api @tauri-apps/plugin-dialog @tauri-apps/plugin-fs @tauri-apps/plugin-opener @tauri-apps/plugin-global-shortcut
-npx tauri init
 ```
-Point Tauri's `devUrl` to `http://localhost:3000` and `frontendDist` to `../dist`.
 
 ### Step 2: Replace the Two Adapter Files
 

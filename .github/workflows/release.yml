@@ -1,0 +1,235 @@
+name: Release Foldary (Windows NSIS Installer)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Release mode: build & publish Windows NSIS .exe installer, or bump version only with no installer output"
+        required: true
+        type: choice
+        default: release_installer
+        options:
+          - release_installer
+          - version_bump_only
+      bump_type:
+        description: "How to increment the version (use 'none' to release the current version without bumping)"
+        required: true
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+          - custom
+          - none
+      custom_version:
+        description: "Exact SemVer (e.g. 2.0.0) — used only when bump_type is 'custom'"
+        required: false
+        type: string
+        default: ""
+      draft_release:
+        description: "Publish GitHub Release as draft (applies only to release_installer)"
+        required: false
+        type: boolean
+        default: false
+      release_notes:
+        description: "Optional extra release notes (applies only to release_installer)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: foldary-manual-release
+  cancel-in-progress: false
+
+jobs:
+  prepare_version:
+    name: Version Bump & Tag Preparation
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      previous_version: ${{ steps.bump.outputs.previous_version }}
+      changed: ${{ steps.bump.outputs.changed }}
+      commit_sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Compute and sync version across package.json, tauri.conf.json, and Cargo.toml
+        id: bump
+        env:
+          BUMP_TYPE: ${{ inputs.bump_type }}
+          CUSTOM_VERSION: ${{ inputs.custom_version }}
+        run: |
+          if [ "$BUMP_TYPE" = "custom" ]; then
+            node scripts/bump-version.mjs --type custom --custom "$CUSTOM_VERSION" --github-output
+          else
+            node scripts/bump-version.mjs --type "$BUMP_TYPE" --github-output
+          fi
+
+      - name: Commit version bump (and tag if releasing installer)
+        id: commit
+        env:
+          RELEASE_MODE: ${{ inputs.mode }}
+          NEXT_VERSION: ${{ steps.bump.outputs.version }}
+          VERSION_CHANGED: ${{ steps.bump.outputs.changed }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if [ "$VERSION_CHANGED" = "true" ]; then
+            git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
+            if [ "$RELEASE_MODE" = "version_bump_only" ]; then
+              git commit -m "chore(version): bump to v${NEXT_VERSION} (no installer output)"
+            else
+              git commit -m "chore(release): prepare v${NEXT_VERSION}"
+            fi
+            git push origin HEAD:"${GITHUB_REF_NAME}"
+          else
+            echo "Version files unchanged (current version: ${NEXT_VERSION})."
+          fi
+
+          if [ "$RELEASE_MODE" = "release_installer" ]; then
+            TAG="v${NEXT_VERSION}"
+            if git rev-parse "$TAG" >/dev/null 2>&1; then
+              echo "Tag ${TAG} already exists. Use a higher version bump or delete the existing tag first." >&2
+              exit 1
+            fi
+            git tag -a "$TAG" -m "Foldary ${TAG}"
+            git push origin "$TAG"
+          fi
+
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Write job summary for version-only bump
+        if: inputs.mode == 'version_bump_only'
+        env:
+          PREV_VERSION: ${{ steps.bump.outputs.previous_version }}
+          NEXT_VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          {
+            echo "### No-Output Version Increase Completed"
+            echo ""
+            echo "- **Version**: \`${PREV_VERSION}\` → \`${NEXT_VERSION}\`"
+            echo "- **Mode**: \`version_bump_only\` (no NSIS installer built, no GitHub Release created)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build_and_release_windows:
+    name: Build Windows NSIS Installer (.exe) & Publish Release
+    needs: prepare_version
+    if: inputs.mode == 'release_installer'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout bumped commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare_version.outputs.commit_sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install frontend dependencies
+        shell: pwsh
+        run: |
+          if (Test-Path "package-lock.json") {
+            npm ci
+          } else {
+            npm install
+          }
+
+      - name: Verify TypeScript types
+        run: npm run lint
+
+      - name: Build Windows NSIS installer (.exe) via Tauri v2
+        run: npx --yes @tauri-apps/cli@2 build --bundles nsis
+
+      - name: Collect installer and generate SHA-256 checksum
+        id: assets
+        shell: pwsh
+        run: |
+          $nsisDir = "src-tauri/target/release/bundle/nsis"
+          $exe = Get-ChildItem -Path $nsisDir -Filter "*-setup.exe" | Select-Object -First 1
+          if (-not $exe) {
+            throw "NSIS installer executable (*-setup.exe) was not found in $nsisDir"
+          }
+          $hash = (Get-FileHash -Path $exe.FullName -Algorithm SHA256).Hash.ToLower()
+          $checksumPath = Join-Path $nsisDir "SHA256SUMS.txt"
+          "$hash  $($exe.Name)" | Out-File -FilePath $checksumPath -Encoding utf8 -NoNewline
+
+          "exe_path=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "exe_name=$($exe.Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "checksum_path=$checksumPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "sha256=$hash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Publish GitHub Release with NSIS installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: v${{ needs.prepare_version.outputs.version }}
+          VERSION: ${{ needs.prepare_version.outputs.version }}
+          DRAFT_RELEASE: ${{ inputs.draft_release }}
+          EXTRA_NOTES: ${{ inputs.release_notes }}
+          EXE_PATH: ${{ steps.assets.outputs.exe_path }}
+          EXE_NAME: ${{ steps.assets.outputs.exe_name }}
+          CHECKSUM_PATH: ${{ steps.assets.outputs.checksum_path }}
+          SHA256: ${{ steps.assets.outputs.sha256 }}
+        run: |
+          $notes = @(
+            "## Foldary $env:TAG_NAME",
+            "",
+            "### Windows Installer (NSIS)",
+            "- Download ``$env:EXE_NAME`` and run it to install Foldary.",
+            "- SHA-256: ``$env:SHA256``"
+          )
+          if ($env:EXTRA_NOTES.Trim().Length -gt 0) {
+            $notes += @("", "### Release Notes", $env:EXTRA_NOTES)
+          }
+          $notesFile = "release-notes.md"
+          $notes -join "`n" | Out-File -FilePath $notesFile -Encoding utf8
+
+          $argsList = @(
+            "release", "create", $env:TAG_NAME,
+            $env:EXE_PATH, $env:CHECKSUM_PATH,
+            "--title", "Foldary $env:TAG_NAME",
+            "--notes-file", $notesFile,
+            "--generate-notes"
+          )
+          if ($env:DRAFT_RELEASE -eq "true") {
+            $argsList += "--draft"
+          }
+
+          gh @argsList
+
+      - name: Write job summary
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.prepare_version.outputs.version }}
+          EXE_NAME: ${{ steps.assets.outputs.exe_name }}
+          SHA256: ${{ steps.assets.outputs.sha256 }}
+        run: |
+          @(
+            "### Foldary v$env:VERSION Released",
+            "",
+            "- **Installer**: ``$env:EXE_NAME`` (Windows NSIS)",
+            "- **SHA-256**: ``$env:SHA256``"
+          ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append

@@ -96,6 +96,15 @@ Foldary persists configuration locally and lets you export/import `config.json` 
 
 ---
 
+## Releases & Versioning (GitHub Actions)
+
+Releases are triggered **manually** via **Actions → Release Foldary (Windows NSIS Installer) → Run workflow** (`.github/workflows/release.yml`):
+
+- **Build & Publish Windows NSIS Installer (`mode: release_installer`)**: Increments the version across `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml` (or uses `bump_type: none` to release the current version), tags `vX.Y.Z`, builds a lightweight Windows NSIS `.exe` setup installer via Tauri v2, and publishes a GitHub Release with the `.exe` and `SHA256SUMS.txt`.
+- **No-Output Version Increase (`mode: version_bump_only`)**: Increments and commits the version across all project manifests (`patch`, `minor`, `major`, or `custom` such as `2.0.0`) **without** building an installer or creating a GitHub Release—ideal when a version is coded but not yet shipped as an installer.
+
+---
+
 ## Documentation
 
 - [`PROJECT.md`](./PROJECT.md) — Product vision, typical user personas, core workflows, and non-goals.
