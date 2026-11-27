@@ -4,6 +4,7 @@
  *   - package.json
  *   - src-tauri/tauri.conf.json
  *   - src-tauri/Cargo.toml
+ *   - src-tauri/Cargo.lock (when present)
  *
  * Usage:
  *   node scripts/bump-version.mjs --type <patch|minor|major|custom|none> [--custom 2.0.0] [--github-output]
@@ -80,11 +81,23 @@ function updateJsonVersion(filePath, nextVersion) {
 function updateCargoTomlVersion(filePath, nextVersion) {
   if (!fs.existsSync(filePath)) return false;
   const raw = fs.readFileSync(filePath, 'utf8');
-  const packageSectionRegex = /(\[package\][\s\S]*?\nversion\s*=\s*")([^"]+)(")/;
+  const packageSectionRegex = /(\[package\][\s\S]*?\r?\nversion\s*=\s*")([^"]+)(")/;
   if (!packageSectionRegex.test(raw)) {
     throw new Error(`Could not locate [package] version field in ${filePath}`);
   }
   const updated = raw.replace(packageSectionRegex, `$1${nextVersion}$3`);
+  if (updated === raw) return false;
+  fs.writeFileSync(filePath, updated, 'utf8');
+  return true;
+}
+
+function updateCargoLockVersion(filePath, nextVersion) {
+  if (!fs.existsSync(filePath)) return false;
+  const raw = fs.readFileSync(filePath, 'utf8');
+  const lockEntryRegex =
+    /(\[\[package\]\]\r?\nname\s*=\s*"foldary"\r?\nversion\s*=\s*")([^"]+)(")/;
+  if (!lockEntryRegex.test(raw)) return false;
+  const updated = raw.replace(lockEntryRegex, `$1${nextVersion}$3`);
   if (updated === raw) return false;
   fs.writeFileSync(filePath, updated, 'utf8');
   return true;
@@ -95,15 +108,17 @@ function main() {
   const pkgPath = path.join(rootDir, 'package.json');
   const tauriConfPath = path.join(rootDir, 'src-tauri', 'tauri.conf.json');
   const cargoTomlPath = path.join(rootDir, 'src-tauri', 'Cargo.toml');
+  const cargoLockPath = path.join(rootDir, 'src-tauri', 'Cargo.lock');
 
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-  const previousVersion = String(pkg.version || '0.1.0');
+  const previousVersion = String(pkg.version || '1.0.0');
   const nextVersion = computeNextVersion(previousVersion, type, custom);
 
   const changedPkg = updateJsonVersion(pkgPath, nextVersion);
   const changedTauri = updateJsonVersion(tauriConfPath, nextVersion);
   const changedCargo = updateCargoTomlVersion(cargoTomlPath, nextVersion);
-  const changed = changedPkg || changedTauri || changedCargo;
+  const changedLock = updateCargoLockVersion(cargoLockPath, nextVersion);
+  const changed = changedPkg || changedTauri || changedCargo || changedLock;
 
   console.log(`Foldary version: ${previousVersion} -> ${nextVersion} (changed: ${changed})`);
 

@@ -47,7 +47,7 @@ concurrency:
 
 jobs:
   prepare_version:
-    name: Version Bump & Tag Preparation
+    name: Version Bump & Pre-Flight Validation
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.bump.outputs.version }}
@@ -65,7 +65,7 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Compute and sync version across package.json, tauri.conf.json, and Cargo.toml
+      - name: Compute and sync version across manifests
         id: bump
         env:
           BUMP_TYPE: ${{ inputs.bump_type }}
@@ -77,18 +77,35 @@ jobs:
             node scripts/bump-version.mjs --type "$BUMP_TYPE" --github-output
           fi
 
-      - name: Commit version bump (and tag if releasing installer)
+      - name: Pre-flight tag check & commit version bump
         id: commit
         env:
           RELEASE_MODE: ${{ inputs.mode }}
           NEXT_VERSION: ${{ steps.bump.outputs.version }}
           VERSION_CHANGED: ${{ steps.bump.outputs.changed }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ "$RELEASE_MODE" = "release_installer" ]; then
+            TAG="v${NEXT_VERSION}"
+            if git rev-parse --verify --quiet "refs/tags/${TAG}" >/dev/null; then
+              echo "Tag ${TAG} already exists. Choose a higher version bump or delete the existing tag before releasing." >&2
+              exit 1
+            fi
+          fi
 
           if [ "$VERSION_CHANGED" = "true" ]; then
+            if [ "${GITHUB_REF_TYPE}" != "branch" ]; then
+              echo "Version bumps must be triggered from a branch (current ref type: ${GITHUB_REF_TYPE})." >&2
+              exit 1
+            fi
+
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
             git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
+            if [ -f src-tauri/Cargo.lock ]; then
+              git add src-tauri/Cargo.lock
+            fi
+
             if [ "$RELEASE_MODE" = "version_bump_only" ]; then
               git commit -m "chore(version): bump to v${NEXT_VERSION} (no installer output)"
             else
@@ -97,16 +114,6 @@ jobs:
             git push origin HEAD:"${GITHUB_REF_NAME}"
           else
             echo "Version files unchanged (current version: ${NEXT_VERSION})."
-          fi
-
-          if [ "$RELEASE_MODE" = "release_installer" ]; then
-            TAG="v${NEXT_VERSION}"
-            if git rev-parse "$TAG" >/dev/null 2>&1; then
-              echo "Tag ${TAG} already exists. Use a higher version bump or delete the existing tag first." >&2
-              exit 1
-            fi
-            git tag -a "$TAG" -m "Foldary ${TAG}"
-            git push origin "$TAG"
           fi
 
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -121,7 +128,7 @@ jobs:
             echo "### No-Output Version Increase Completed"
             echo ""
             echo "- **Version**: \`${PREV_VERSION}\` → \`${NEXT_VERSION}\`"
-            echo "- **Mode**: \`version_bump_only\` (no NSIS installer built, no GitHub Release created)"
+            echo "- **Mode**: \`version_bump_only\` (no NSIS installer built, no tag or GitHub Release created)"
           } >> "$GITHUB_STEP_SUMMARY"
 
   build_and_release_windows:
@@ -130,7 +137,7 @@ jobs:
     if: inputs.mode == 'release_installer'
     runs-on: windows-latest
     steps:
-      - name: Checkout bumped commit
+      - name: Checkout prepared commit
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.prepare_version.outputs.commit_sha }}
@@ -143,8 +150,15 @@ jobs:
       - name: Setup Rust stable toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Ensure Cargo.lock exists for Rust cache
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "src-tauri/Cargo.lock")) {
+            cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
+          }
+
       - name: Cache Rust build artifacts
-        uses: swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2
         with:
           workspaces: "./src-tauri -> target"
 
@@ -159,6 +173,9 @@ jobs:
 
       - name: Verify TypeScript types
         run: npm run lint
+
+      - name: Generate compliant multi-resolution Windows & Tauri icons
+        run: npx --yes @tauri-apps/cli@2 icon src-tauri/icons/icon.png
 
       - name: Build Windows NSIS installer (.exe) via Tauri v2
         run: npx --yes @tauri-apps/cli@2 build --bundles nsis
@@ -181,10 +198,11 @@ jobs:
           "checksum_path=$checksumPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "sha256=$hash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      - name: Publish GitHub Release with NSIS installer
+      - name: Publish GitHub Release & create tag atomically
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          COMMIT_SHA: ${{ needs.prepare_version.outputs.commit_sha }}
           TAG_NAME: v${{ needs.prepare_version.outputs.version }}
           VERSION: ${{ needs.prepare_version.outputs.version }}
           DRAFT_RELEASE: ${{ inputs.draft_release }}
@@ -201,17 +219,17 @@ jobs:
             "- Download ``$env:EXE_NAME`` and run it to install Foldary.",
             "- SHA-256: ``$env:SHA256``"
           )
-          if ($env:EXTRA_NOTES.Trim().Length -gt 0) {
-            $notes += @("", "### Release Notes", $env:EXTRA_NOTES)
+          if (-not [string]::IsNullOrWhiteSpace($env:EXTRA_NOTES)) {
+            $notes += @("", "### Release Notes", $env:EXTRA_NOTES.Trim())
           }
-          $notesFile = "release-notes.md"
-          $notes -join "`n" | Out-File -FilePath $notesFile -Encoding utf8
+          $notesText = $notes -join "`n"
 
           $argsList = @(
             "release", "create", $env:TAG_NAME,
             $env:EXE_PATH, $env:CHECKSUM_PATH,
+            "--target", $env:COMMIT_SHA,
             "--title", "Foldary $env:TAG_NAME",
-            "--notes-file", $notesFile,
+            "--notes", $notesText,
             "--generate-notes"
           )
           if ($env:DRAFT_RELEASE -eq "true") {
