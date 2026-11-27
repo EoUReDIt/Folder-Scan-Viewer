@@ -1,6 +1,6 @@
 [package]
 name = "foldary"
-version = "1.0.0"
+version = "2.0.0"
 description = "Foldary — Folder-first desktop file launcher and sorter"
 authors = ["Foldary Contributors"]
 edition = "2021"
