@@ -366,6 +366,26 @@ export function scopeEntriesToSubpath(
     });
 }
 
+/**
+ * The entries inside `subpath`, re-rooted so that `subpath` becomes the top level.
+ * Used to show a pinned subfolder as a favorite of its own.
+ */
+export function rebaseEntriesToSubpath(entries: FileEntry[], subpath: string): FileEntry[] {
+  const prefix = `${subpath}/`;
+  return entries
+    .filter((entry) => entry.parentPath === subpath || entry.parentPath.startsWith(prefix))
+    .map((entry) => {
+      const newParent =
+        entry.parentPath === subpath ? '' : entry.parentPath.slice(subpath.length + 1);
+      return {
+        ...entry,
+        parentPath: newParent,
+        entryPath: newParent ? `${newParent}/${entry.name}` : entry.name,
+        relativePath: newParent ? `.\\${newParent.split('/').join('\\')}\\` : '.\\',
+      };
+    });
+}
+
 export interface FilterSortOptions {
   entries: FileEntry[];
   currentSubpath: string;

@@ -29,7 +29,7 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | L1 | Low | Unused AI Studio leftovers (`@google/genai`, `express`, `dotenv`, `motion`, `tsx`, Gemini `.env.example`, `metadata.json`); build tools in `dependencies` | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#10](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/10) |
 | L2 | Low | Removing a local favorite leaks its `localFolders` entry | ✅ Merged | [#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) (folded into H1) |
 | L3 | Low | Accessibility: rows not focusable, context menu lacks focus/arrow keys, settings modal lacks focus trap | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#11](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/11) |
-| L4 | Low | `App.tsx` (879 lines at review, 1,235 now) mixes favorites, mounting and shortcuts; extract hooks | 🟡 In progress | (PR pending) |
+| L4 | Low | `App.tsx` (879 lines at review, 1,235 now) mixes favorites, mounting and shortcuts; extract hooks | ✅ Ready to close | [#12](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/12) |
 | L5 | Low | No tests; no CI on push/PR; version-bump commit is pushed before the installer build succeeds | ⏳ | — |
 | L6 | Low | `bump-version.mjs` doesn't update `package-lock.json` (fixed manually in `e918ec6`) | ⏳ | — |
 | L7 | Low | Preview pane dark background `#222222` drifts from documented tokens | ⏳ | — |
@@ -877,10 +877,10 @@ Effect: a slower `npm install` with about a dozen unused packages, a misleading 
 | Stage | Status | Notes |
 |-------|--------|-------|
 | 📋 Document | ✅ | This section |
-| 🔀 PR | ⏳ | |
+| 🔀 PR | ✅ | [#12](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/12) |
 | 📝 Proposal | ✅ | See Proposal below |
-| 🔧 Implementation | ⏳ | |
-| ✅ Ready-to-close check | ⏳ | |
+| 🔧 Implementation | ✅ | See Implementation below |
+| ✅ Ready-to-close check | ✅ | See Ready to close below |
 | 🏁 Closed | ⏳ | |
 
 ### Problem
@@ -926,6 +926,35 @@ A behaviour-preserving refactor. No UI, `config.json` or storage changes.
    - Lint and build pass.
    - All browser tests pass unchanged: L1, H1, H2, H3, M1–M6 and L3. They exercise mounting, remount, import/export, favorites, scope override, search, the virtualized grid and every shortcut.
    - Bundle size stays about the same.
+
+### Implementation
+
+`App.tsx` goes from 1,235 to 431 lines. Behaviour, `config.json` and storage are unchanged.
+
+| File | Change |
+|------|--------|
+| `src/services/startup.ts` (new) | `getInitialFolder`, `getStartupSort` and the `FolderSort` type, moved out of `App.tsx` |
+| `src/services/nativeBridge.ts` | `syncNativeAccess(favorites)` moved here from `App.tsx`, so every Tauri call stays in `src/services/` |
+| `src/services/fileProvider.ts` | `rebaseEntriesToSubpath(entries, subpath)` re-roots entries under a subfolder. It replaces two hand-written copies: the demo pinned-subfolder view and pinning a local subfolder |
+| `src/hooks/useToasts.ts` | `toasts`, `notify` |
+| `src/hooks/useAppConfig.ts` | `config` and `setConfig`, the `localStorage` save, the `dark` class |
+| `src/hooks/useFolderNavigation.ts` | Active folder, subpath and sort. `goToFolder` / `openFolder(folder, config)` replace the five copies of "open with startup sort" (select, mount, reset, import; remove-active uses `switchFolderKeepingSort`, as before). Also `navigateUp`, `sortByColumn`, `quickSort`, `toggleFoldersFirst` |
+| `src/hooks/useLocalFolders.ts` | Entries, status and handles of local favorites; `restoreLocalFolder`; the startup restore effect; `storeEntries`, `forget(ids)`, `forgetAll` replace the clean-up written out in remove, import and reset |
+| `src/hooks/useFolderMounting.ts` | Add folder, Choose again, Reconnect, the `<input webkitdirectory>` fallback and `folderInputRef` |
+| `src/hooks/useFavorites.ts` | Pin, remove, toggle, set Default, current-location status |
+| `src/hooks/useKeyboardShortcuts.ts` | The global keydown listener, taking one options object; still suspended while the menu or settings is open |
+| `src/hooks/useFileActions.ts` | Copy path, open and reveal through the desktop shell. Not in the proposal: added to bring `App.tsx` under the 450-line target |
+| `src/App.tsx` | Keeps view state (search, filters, selection, preview, settings, context menu, M3 scope override), the derived lists and the JSX |
+| `AGENTS.md` §3 | Lists `src/hooks/` and `startup.ts`. The rule is worded as "hooks own state and may call services; components get props and never import hooks". The proposal's "components never call services" was dropped because `FileGrid`, `PreviewPane` and `SettingsModal` already use service helpers (formatting, preview reads, config validation) |
+
+### Ready to close
+
+| Check | Result |
+|-------|--------|
+| `npm run lint` | ✅ 0 errors |
+| `npm run build` | ✅ JS bundle 331.9 kB (98.4 kB gzip), was 330.2 kB (97.7 kB gzip) |
+| `App.tsx` size | ✅ 431 lines (target under 450) |
+| Regression tests (production build) | ✅ L1 6, H1 13, H2 23, H3 14, M1 18, M2 24, M3 22, M4 16, M5 17, M6 7, L3 37, web-mode check. All unchanged, 0 failures |
 
 ### Out of scope
 
