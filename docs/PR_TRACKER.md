@@ -30,8 +30,8 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | L2 | Low | Removing a local favorite leaks its `localFolders` entry | ✅ Merged | [#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) (folded into H1) |
 | L3 | Low | Accessibility: rows not focusable, context menu lacks focus/arrow keys, settings modal lacks focus trap | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#11](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/11) |
 | L4 | Low | `App.tsx` (879 lines at review, 1,235 now) mixes favorites, mounting and shortcuts; extract hooks | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#12](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/12) |
-| L5 | Low | No tests; no CI on push/PR; version-bump commit is pushed before the installer build succeeds | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#13](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/13) |
-| L6 | Low | `bump-version.mjs` doesn't update `package-lock.json` (fixed manually in `e918ec6`) | ⏳ | — |
+| L5 | Low | No tests; no CI on push/PR; version-bump commit is pushed before the installer build succeeds | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#13](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/13) |
+| L6 | Low | `bump-version.mjs` doesn't update `package-lock.json` (fixed manually in `e918ec6`) | 🟡 In progress | — |
 | L7 | Low | Preview pane dark background `#222222` drifts from documented tokens | ⏳ | — |
 
 ---
@@ -973,7 +973,7 @@ A behaviour-preserving refactor. No UI, `config.json` or storage changes.
 | 📝 Proposal | ✅ | See Proposal below |
 | 🔧 Implementation | ✅ | See Implementation below |
 | ✅ Ready-to-close check | ✅ | See Ready to close below |
-| 🏁 Closed | ⏳ | |
+| 🏁 Closed | ✅ | Merged 2026-11-28 (`20896a2`) |
 
 ### Problem
 
@@ -1037,3 +1037,25 @@ A behaviour-preserving refactor. No UI, `config.json` or storage changes.
 - Moving the browser regression scripts into the repository (they need a running preview server and Playwright).
 - Code coverage thresholds.
 - `package-lock.json` in the version bump (L6).
+
+---
+
+## L6 — Keep `package-lock.json` in step with the version bump
+
+| Stage | Status | Notes |
+|-------|--------|-------|
+| 📋 Document | ✅ | This section |
+| 🔀 PR | ⏳ | |
+| 📝 Proposal | ⏳ | |
+| 🔧 Implementation | ⏳ | |
+| ✅ Ready-to-close check | ⏳ | |
+| 🏁 Closed | ⏳ | |
+
+### Problem
+
+`scripts/bump-version.mjs` updates the version in `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `src-tauri/Cargo.lock`, but not in `package-lock.json`. The lockfile stores the project's own version twice: the top-level `version` and `packages[""].version`.
+
+- After a bump, the lockfile still names the old version. `npm ci` doesn't fail on this, but the next `npm install` rewrites both fields, so an unrelated change picks up a stray lockfile diff.
+- This already happened once: the 2.0.1 bump left the lockfile at the old version, and `e918ec6` fixed it by hand.
+- The release workflow (`.github/workflows/release.yml`) only stages `package.json`, `tauri.conf.json`, `Cargo.toml` and `Cargo.lock`, so even a fixed script's lockfile change would be left out of the bump commit in both `prepare_version` and `publish`.
+
