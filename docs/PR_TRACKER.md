@@ -31,7 +31,7 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | L3 | Low | Accessibility: rows not focusable, context menu lacks focus/arrow keys, settings modal lacks focus trap | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#11](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/11) |
 | L4 | Low | `App.tsx` (879 lines at review, 1,235 now) mixes favorites, mounting and shortcuts; extract hooks | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#12](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/12) |
 | L5 | Low | No tests; no CI on push/PR; version-bump commit is pushed before the installer build succeeds | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#13](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/13) |
-| L6 | Low | `bump-version.mjs` doesn't update `package-lock.json` (fixed manually in `e918ec6`) | 🟡 In progress | — |
+| L6 | Low | `bump-version.mjs` doesn't update `package-lock.json` (fixed manually in `e918ec6`) | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#14](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/14) |
 | L7 | Low | Preview pane dark background `#222222` drifts from documented tokens | ⏳ | — |
 
 ---
@@ -1045,10 +1045,10 @@ A behaviour-preserving refactor. No UI, `config.json` or storage changes.
 | Stage | Status | Notes |
 |-------|--------|-------|
 | 📋 Document | ✅ | This section |
-| 🔀 PR | ⏳ | |
-| 📝 Proposal | ⏳ | |
-| 🔧 Implementation | ⏳ | |
-| ✅ Ready-to-close check | ⏳ | |
+| 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#14](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/14) |
+| 📝 Proposal | ✅ | Below |
+| 🔧 Implementation | ✅ | `updatePackageLockVersion`, 4 tests, `release.yml` stages the lockfile |
+| ✅ Ready-to-close check | ✅ | All checks pass; see below |
 | 🏁 Closed | ⏳ | |
 
 ### Problem
@@ -1058,4 +1058,37 @@ A behaviour-preserving refactor. No UI, `config.json` or storage changes.
 - After a bump, the lockfile still names the old version. `npm ci` doesn't fail on this, but the next `npm install` rewrites both fields, so an unrelated change picks up a stray lockfile diff.
 - This already happened once: the 2.0.1 bump left the lockfile at the old version, and `e918ec6` fixed it by hand.
 - The release workflow (`.github/workflows/release.yml`) only stages `package.json`, `tauri.conf.json`, `Cargo.toml` and `Cargo.lock`, so even a fixed script's lockfile change would be left out of the bump commit in both `prepare_version` and `publish`.
+
+### Proposal
+
+1. Add an exported `updatePackageLockVersion(filePath, nextVersion)` to `scripts/bump-version.mjs`. It sets the top-level `version` and `packages[""].version`, leaves every dependency entry alone, and writes the file back as 2-space JSON with a trailing newline, the same format npm uses. It returns `false` and doesn't write anything when the file is missing or already current.
+2. Call it from `main()` and include it in the `changed` result.
+3. Stage `package-lock.json` in both bump commits in `release.yml` (`prepare_version` for version-only runs, `publish` for full releases).
+4. Unit tests in `scripts/bump-version.test.mjs`, using a temporary lockfile.
+
+### Implementation
+
+| Change | File |
+|--------|------|
+| `updatePackageLockVersion`, called from `main()`; header comment lists the lockfile | `scripts/bump-version.mjs` |
+| 4 tests: both fields updated with the format kept, dependency versions untouched, one stale field fixed, no write when current or missing | `scripts/bump-version.test.mjs` |
+| `git add package.json package-lock.json …` in `prepare_version` and `publish` | `.github/workflows/release.yml` |
+
+### Ready to close
+
+| Check | Result |
+|-------|--------|
+| `npm run lint` | ✅ 0 errors |
+| `npm test` | ✅ 4 files, 38 tests (34 before, plus 4 new) |
+| `npm run build` | ✅ JS bundle unchanged at 331.9 kB |
+| `cargo test` | ✅ 10/10 |
+| Round trip | ✅ Re-serialising the current `package-lock.json` gives the exact same bytes, so a bump changes only the two version lines |
+| `bump-version.mjs` in a scratch copy of the repo | ✅ `--type minor` updates all five files, with a 2-line lockfile diff. `--type none` afterwards reports `changed: false` |
+| npm agrees with the result | ✅ After a bump, `npm ci` succeeds and `npm install --package-lock-only` leaves the lockfile unchanged |
+| Browser regression suite (production build) | ✅ L1 6, H1 13, H2 23, H3 14, M1 18, M2 24, M3 22, M4 16, M5 17, M6 7, L3 37, web-mode check. All unchanged, 0 failures |
+| Not verified here | 🟡 The release workflow only runs when started by hand, so the new `git add` line hasn't run on GitHub yet |
+
+### Out of scope
+
+- Workspaces or nested `package-lock.json` files; this repo has neither.
 
