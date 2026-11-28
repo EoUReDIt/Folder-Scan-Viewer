@@ -1,3 +1,4 @@
+mod rename;
 mod roots;
 mod scan;
 
@@ -95,6 +96,16 @@ fn reveal_path(app: AppHandle, roots: State<'_, Roots>, path: String) -> Result<
     app.opener().reveal_item_in_dir(target).map_err(|e| e.to_string())
 }
 
+/// Renames a file or folder inside a picked folder; returns its new absolute path.
+#[tauri::command]
+async fn rename_path(app: AppHandle, path: String, new_name: String) -> Result<String, String> {
+    blocking(move || {
+        let roots = app.state::<Roots>();
+        rename::rename_in(&roots, &path, &new_name).map(|p| p.to_string_lossy().into_owned())
+    })
+    .await
+}
+
 /// Drops allowlisted roots that no favorite uses any more.
 #[tauri::command]
 fn sync_folders(roots: State<'_, Roots>, keep: Vec<String>) {
@@ -119,7 +130,8 @@ pub fn run() {
             read_file_bytes,
             open_path,
             reveal_path,
-            sync_folders
+            sync_folders,
+            rename_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running Foldary application");

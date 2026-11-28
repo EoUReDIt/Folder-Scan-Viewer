@@ -7,6 +7,7 @@ import {
   FolderInput,
   FolderOpen,
   Home,
+  Pencil,
   ScanSearch,
   Star,
 } from 'lucide-react';
@@ -25,6 +26,8 @@ interface ContextMenuProps {
   /** Desktop shell only: shown for entries with a nativePath */
   onOpenNative: (entry: FileEntry) => void;
   onRevealNative: (entry: FileEntry) => void;
+  /** Shown only when items in the open folder can be renamed on disk */
+  onRename?: (entry: FileEntry) => void;
 }
 
 const ITEM_CLASS =
@@ -46,6 +49,7 @@ export function ContextMenu({
   onCopyText,
   onOpenNative,
   onRevealNative,
+  onRename,
 }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const isOpen = menu !== null;
@@ -112,7 +116,7 @@ export function ContextMenu({
   const menuWidth = 224;
   const hasNative = Boolean(entry.nativePath);
   const nativeItems = hasNative ? (entry.isFolder ? 1 : 2) : 0;
-  const menuHeight = (entry.isFolder ? 185 : 175) + nativeItems * 30 + (hasNative ? 9 : 0);
+  const menuHeight = (entry.isFolder ? 185 : 175) + nativeItems * 30 + (hasNative ? 9 : 0) + (onRename ? 30 : 0);
   const left = Math.min(menu.x, Math.max(8, window.innerWidth - menuWidth - 12));
   const top = Math.min(menu.y, Math.max(8, window.innerHeight - menuHeight - 12));
 
@@ -134,7 +138,7 @@ export function ContextMenu({
           <button
             type="button"
             role="menuitem"
-            tabIndex={-1}
+        tabIndex={-1}
             onClick={() => {
               onOpenFolderHere(entry.entryPath);
               onClose();
@@ -148,7 +152,7 @@ export function ContextMenu({
           <button
             type="button"
             role="menuitem"
-            tabIndex={-1}
+        tabIndex={-1}
             onClick={() => {
               onToggleFavoriteFolder(entry.entryPath, entry.name, entry.fullPath);
               onClose();
@@ -168,7 +172,7 @@ export function ContextMenu({
           <button
             type="button"
             role="menuitem"
-            tabIndex={-1}
+        tabIndex={-1}
             onClick={() => {
               onSetFolderAsDefault(entry.entryPath, entry.name, entry.fullPath);
               onClose();
@@ -184,7 +188,7 @@ export function ContextMenu({
           <button
             type="button"
             role="menuitem"
-            tabIndex={-1}
+        tabIndex={-1}
             onClick={() => {
               onPreviewFile();
               onClose();
@@ -198,7 +202,7 @@ export function ContextMenu({
           <button
             type="button"
             role="menuitem"
-            tabIndex={-1}
+        tabIndex={-1}
             onClick={() => {
               onOpenContainingFolder(entry);
               onClose();
@@ -218,7 +222,7 @@ export function ContextMenu({
             <button
               type="button"
               role="menuitem"
-            tabIndex={-1}
+              tabIndex={-1}
               onClick={() => {
                 onOpenNative(entry);
                 onClose();
@@ -233,7 +237,7 @@ export function ContextMenu({
           <button
             type="button"
             role="menuitem"
-            tabIndex={-1}
+        tabIndex={-1}
             onClick={() => {
               onRevealNative(entry);
               onClose();
@@ -248,10 +252,27 @@ export function ContextMenu({
 
       <div role="separator" className="my-1 border-t border-[#EFEFEF] dark:border-[#3A3A3A]" />
 
+      {onRename && (
+        <button
+          type="button"
+          role="menuitem"
+          tabIndex={-1}
+          onClick={() => {
+            onClose();
+            onRename(entry);
+          }}
+          className={ITEM_CLASS}
+        >
+          <Pencil className="w-3.5 h-3.5 text-[#5C5C5C] dark:text-[#A6A6A6]" />
+          <span className="flex-1">Rename</span>
+          <span className="font-mono text-[11px] text-[#5C5C5C] dark:text-[#A6A6A6]">F2</span>
+        </button>
+      )}
+
       <button
         type="button"
         role="menuitem"
-            tabIndex={-1}
+        tabIndex={-1}
         onClick={() => {
           onCopyText(entry.fullPath, 'Full path');
           onClose();
@@ -265,7 +286,7 @@ export function ContextMenu({
       <button
         type="button"
         role="menuitem"
-            tabIndex={-1}
+        tabIndex={-1}
         onClick={() => {
           onCopyText(entry.name, 'Filename');
           onClose();

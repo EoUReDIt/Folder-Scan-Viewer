@@ -18,6 +18,8 @@ interface KeyboardShortcutOptions {
   onOpenNative: (entry: FileEntry) => void;
   onNavigateUp: () => void;
   onTogglePreview: () => void;
+  /** F2 on the selected item. */
+  onRenameEntry: (entry: FileEntry) => void;
 }
 
 /** Global keyboard shortcuts & arrow-key navigation (AGENTS.md §4.4). */
@@ -37,6 +39,7 @@ export function useKeyboardShortcuts({
   onOpenNative,
   onNavigateUp,
   onTogglePreview,
+  onRenameEntry,
 }: KeyboardShortcutOptions) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -121,6 +124,13 @@ export function useKeyboardShortcuts({
         return;
       }
 
+      // F2: rename the selected item
+      if (e.key === 'F2' && !isInputFocused && selectedEntry && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        onRenameEntry(selectedEntry);
+        return;
+      }
+
       // Backspace: Go up a folder when not editing input
       if (e.key === 'Backspace' && !isInputFocused && currentSubpath) {
         e.preventDefault();
@@ -159,5 +169,6 @@ export function useKeyboardShortcuts({
     onOpenNative,
     onNavigateUp,
     onTogglePreview,
+    onRenameEntry,
   ]);
 }

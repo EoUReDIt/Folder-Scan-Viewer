@@ -36,8 +36,8 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | L8 | Low | Sort toolbar dark background is the canvas `#272727`, not the documented toolbar `#2C2C2C`; its "Saved per folder" hint is below AA contrast | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#16](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/16) |
 | L9 | Low | Secondary greys `#767676` / `#8E8E8E` fall below AA contrast on several backgrounds (search box, Backspace hint, sidebar counts, settings paths) | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#17](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/17) |
 | L10 | Low | Empty-state icons in the file list are `#6E6E6E` in dark mode, 2.93:1 on `#272727` (below 3:1, though decorative) | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#19](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/19) |
-| F1 | ✨ Feature | First launch always opens the demo folders; there is no step to choose a real project folder as the Default | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#20](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/20) |
-| F2 | ✨ Feature | No way to rename anything from inside the app | ⏳ Not started | |
+| F1 | ✨ Feature | First launch always opens the demo folders; there is no step to choose a real project folder as the Default | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#20](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/20) |
+| F2 | ✨ Feature | No way to rename anything from inside the app | 🟡 Ready for review | [EoUReDIt/Folder-Scan-Viewer#21](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/21) |
 | F3 | ✨ Feature | No manual refresh: changes on disk only show after reconnecting or restarting | ⏳ Not started | |
 | F4 | ✨ Feature | Only one item can be selected at a time, and files can't be cut and pasted into another folder | ⏳ Not started | |
 
@@ -1339,7 +1339,7 @@ Option B: change the dark icon colour from `#6E6E6E` to `#8E8E8E` (4.56:1 on `#2
 | 📝 Proposal | ✅ | Below (first-run picker, desktop and web; agreed 2026-11-28) |
 | 🔧 Implementation | ✅ | New `WelcomeScreen.tsx`; `onboarded` config key; see below |
 | ✅ Ready-to-close check | ✅ | All checks pass; see below |
-| 🏁 Closed | ⏳ | |
+| 🏁 Closed | ✅ | Merged in `89d25b4` |
 
 ### Problem
 
@@ -1395,15 +1395,82 @@ Persisting a real Default already works (H1, H2): the desktop shell rescans save
 | Stage | Status | Notes |
 |-------|--------|-------|
 | 📋 Document | ✅ | This section |
-| 🔀 PR | ⏳ | Starts after F1 merges |
-| 📝 Proposal | ⏳ | |
-| 🔧 Implementation | ⏳ | |
-| ✅ Ready-to-close check | ⏳ | |
+| 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#21](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/21) |
+| 📝 Proposal | ✅ | Below (option C: pinned-folder names and items on disk; agreed 2026-11-28) |
+| 🔧 Implementation | ✅ | Below |
+| ✅ Ready-to-close check | ✅ | Below; waiting for merge approval |
 | 🏁 Closed | ⏳ | |
 
 ### Problem
 
 User request: "give the rename option within the app". Nothing in the app can be renamed today: pinned favorites keep the folder's name, and the context menu has no Rename action for files or folders.
+
+### Proposal
+
+The user chose **both**: rename a pinned folder's display name, and rename real files and folders on disk.
+
+**1. Pinned folder names (all sources, demo included)**
+
+- Each row in **Pinned Folders** gets a **Rename** (pencil) button next to Unpin, shown on hover and on keyboard focus.
+- Only `favorite.name` changes; the folder on disk, its path and its saved sort stay the same. The new name is saved in `config.json` (existing `name` key, so export/import stay compatible).
+- Rules: 1–80 characters after trimming.
+
+**2. Files and folders on disk (local folders only)**
+
+- Context menu → **Rename** (hint `F2`), and **F2** on the selected row.
+- Opens a small **Rename** dialog. The name is pre-filled with the stem selected (`report` in `report.pdf`). It shows a live error, and **Rename** stays disabled while the name is invalid or unchanged. Enter confirms and Esc cancels; focus is trapped and returns to the grid afterwards.
+- Name rules (same in TypeScript and Rust):
+  - not empty, `.` or `..`
+  - no `/ \ : * ? " < > |` or control characters
+  - doesn't end in a space or a dot
+  - not a Windows reserved name (`CON`, `NUL`, `COM1`…)
+  - at most 255 characters
+  - no other item in the same folder has that name (letter case ignored, but changing only the case is allowed)
+- Where it works:
+
+  | Where | How |
+  |-------|-----|
+  | Desktop app | New Rust command `rename_path`: the parent must be inside a folder the user picked (the existing allowlist), the target must not exist, then `std::fs::rename`. A folder the user picked itself can't be renamed this way (that would break its access); the dialog points to renaming the pinned name instead |
+  | Chrome / Edge, folder opened with the folder picker | Asks for write access once (browser prompt), then `FileSystemHandle.move(newName)`. Without `move()`, files are copied to the new name and the old one is removed. Folders without `move()` show "this browser can't rename folders" |
+  | Folder opened with the fallback picker, or the demo | No Rename item (read-only copy); **F2** shows a toast explaining why |
+
+- After a rename:
+  - The folder is rescanned and the renamed row stays selected.
+  - Pinned favorites inside a renamed folder get their path updated, and so does the Default.
+  - If you're inside a renamed folder, the breadcrumb follows it.
+
+**Out of scope**: undo; renaming several items at once (F4 covers selecting several); renaming from the preview pane.
+
+### Implementation
+
+| Change | File |
+|--------|------|
+| `rename_path` command: checks the name, resolves the parent through the allowlist, refuses a picked folder itself and an existing target (a case-only change is allowed), then `fs::rename`. 5 tests | `src-tauri/src/rename.rs`, `src-tauri/src/lib.rs`, `src-tauri/src/roots.rs` (`holds_root`) |
+| `renameNativePath` bridge | `src/services/nativeBridge.ts` |
+| Name rules, path rebasing, favorites rebasing, browser rename (`move()`, else copy + remove for files). 13 tests | `src/services/rename.ts`, `src/services/rename.test.ts` |
+| Handle types gain `move`, `createWritable`, `removeEntry`; permission check can ask for `readwrite` | `src/services/fileProvider.ts` |
+| `useRename`: why renaming is blocked, sibling names, pinned-name rename, disk rename (write permission, favorites + Default + breadcrumb follow, rescan of affected favorites) | `src/hooks/useRename.ts` |
+| Rename dialog: stem pre-selected, live error, Enter/Esc, Tab trap, focus back to the opener, error shown inline when the rename fails | `src/components/RenameDialog.tsx` |
+| Context menu **Rename** (`F2` hint), shown only where renaming works | `src/components/ContextMenu.tsx` |
+| Pencil button on each pinned folder; the Default label hides while the buttons show | `src/components/Sidebar.tsx` |
+| `F2` shortcut; shortcuts list | `src/hooks/useKeyboardShortcuts.ts`, `src/components/SettingsModal.tsx` |
+| Wiring, select the renamed row once it appears | `src/App.tsx` |
+| Service, hook and component lists | `AGENTS.md` |
+
+Found while testing: current Chromium has `move()` on files only, not on folders. So in Chrome and Edge, renaming a **folder** shows "This browser can't rename folders. Use the Foldary desktop app", and the dialog stays open. Files rename fine.
+
+### Ready-to-close check
+
+| Check | Result |
+|-------|--------|
+| `npm run lint` | ✅ 0 errors |
+| `npm test` | ✅ 54 tests (41 → 54) |
+| `npm run build` | ✅ JS bundle 336.0 → 347.9 kB |
+| `cargo test` | ✅ 15 tests (10 → 15) |
+| F2 browser test (production build, a real browser folder stood in by OPFS) | ✅ 49/49, run twice: with `move()` and with the copy fallback. F2 opens the dialog with the stem selected; bad characters and duplicates are refused; Esc cancels and focus returns; the file is renamed on disk with its content kept; the grid shows the new name with the row selected; the folder rename is refused with a message; the pinned name is saved trimmed while the folder on disk keeps its name; the demo has no Rename item and F2 shows a toast |
+| Contrast | ✅ Error `#C42B1C`/`#FFFFFF` 5.66:1, `#FF99A4`/`#272727` 7.36:1; disabled button `#5C5C5C`/`#E5E5E5` 5.31:1, `#A6A6A6`/`#383838` 4.82:1 |
+| Browser regression suite | ✅ L1 6, H1 13, H2 23, H3 14, M1 18, M2 24, M3 22, M4 16, M5 17, M6 7, L3 37, F1 22, web-mode check; all unchanged |
+| Desktop (Tauri) rename | 🟡 Rust command covered by `cargo test`; the app window itself can't run in the cloud container |
 
 ---
 

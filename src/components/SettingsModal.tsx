@@ -50,6 +50,7 @@ const SHORTCUTS: { keys: string; desc: string }[] = [
   { keys: 'Ctrl + Enter', desc: 'Open selected file with its default app (desktop app)' },
   { keys: 'Backspace', desc: 'Navigate up to parent folder' },
   { keys: 'Space', desc: 'Toggle Quick Preview pane' },
+  { keys: 'F2', desc: 'Rename the selected item' },
   { keys: 'Shift + F10 / Menu', desc: 'Open the actions menu for the selected row' },
   { keys: 'Alt + 1–9', desc: 'Switch directly to a pinned favorite folder' },
   { keys: 'Esc', desc: 'Clear search or close menus & modals' },
