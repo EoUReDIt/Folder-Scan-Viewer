@@ -12,6 +12,18 @@ const VALID_SORT_FIELDS: SortField[] = [
 ];
 const VALID_SORT_ORDERS: SortOrder[] = ['asc', 'desc'];
 const VALID_STARTUP_BEHAVIORS: StartupBehavior[] = ['per_folder', 'global'];
+const BUILT_IN_DEMO_IDS = new Set(DEFAULT_APP_CONFIG.favorites.map((f) => f.id));
+
+/**
+ * Resolves a favorite's sourceType. Files exported before sourceType was included
+ * lack the key: demo favorites are recognisable by a baseDemoId or a built-in demo id,
+ * so anything else must be a mounted local folder or a subfolder pinned from one.
+ */
+function resolveSourceType(f: Record<string, unknown>, id: string): 'demo' | 'local' {
+  if (f.sourceType === 'local' || f.sourceType === 'demo') return f.sourceType;
+  if (typeof f.baseDemoId === 'string' || BUILT_IN_DEMO_IDS.has(id)) return 'demo';
+  return 'local';
+}
 
 export function loadSavedConfig(): AppConfig {
   try {
@@ -59,6 +71,7 @@ export function exportConfigJsonString(config: AppConfig): string {
       sortBy: fav.sortBy,
       sortOrder: fav.sortOrder,
       foldersFirst: fav.foldersFirst,
+      sourceType: fav.sourceType,
       ...(fav.baseDemoId ? { baseDemoId: fav.baseDemoId } : {}),
       ...(fav.subpath ? { subpath: fav.subpath } : {}),
     })),
@@ -126,7 +139,7 @@ export function validateAndNormalizeConfig(
       sortBy,
       sortOrder,
       foldersFirst: typeof f.foldersFirst === 'boolean' ? f.foldersFirst : true,
-      sourceType: f.sourceType === 'local' ? 'local' : 'demo',
+      sourceType: resolveSourceType(f, f.id.trim()),
       baseDemoId: typeof f.baseDemoId === 'string' ? f.baseDemoId : undefined,
       subpath: typeof f.subpath === 'string' ? f.subpath : undefined,
     });

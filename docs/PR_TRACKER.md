@@ -19,7 +19,7 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 |----|----------|---------|--------|----|
 | H1 | 🔴 High | Mounted local folders (and a local Default Folder) are never persisted; reload silently falls back to a demo folder | ✅ Merged | [#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) |
 | H2 | 🔴 High | Desktop build has no native filesystem layer: fake `Local\…` paths, no "Open file" action, `csp: null`, `core:default` only | ⏳ | — |
-| H3 | 🔴 High | `config.json` export drops `sourceType`; re-imported local favorites become empty demo folders | 🟡 In progress | (PR pending) |
+| H3 | 🔴 High | `config.json` export drops `sourceType`; re-imported local favorites become empty demo folders | 🟡 Ready to close | [EoUReDIt/Folder-Scan-Viewer#2](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/2) |
 | M1 | 🟡 Medium | Native-picker folders get `dateModified: Date.now()`; skews recency filter and Recent sort | ⏳ | — |
 | M2 | 🟡 Medium | Scan cap (2,500) leaks; fallback picker has no cap or `node_modules`/`.git` skip; no grid virtualization | ⏳ | — |
 | M3 | 🟡 Medium | "Open Containing Folder" silently persists `includeSubfolders = false` | ⏳ | — |
@@ -116,11 +116,11 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | Stage | Status | Notes |
 |-------|--------|-------|
 | 📋 Document | ✅ | This section |
-| 🔀 PR | ⏳ | |
+| 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#2](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/2) |
 | 📝 Proposal | ✅ | See Proposal below |
-| 🔧 Implementation | ⏳ | |
-| ✅ Ready-to-close check | ⏳ | |
-| 🏁 Closed | ⏳ | |
+| 🔧 Implementation | ✅ | See Implementation below |
+| ✅ Ready-to-close check | ✅ | See Ready-to-close check below |
+| 🏁 Closed | ⏳ | Awaiting merge approval |
 
 ### Problem
 
@@ -144,3 +144,24 @@ Since H1, local favorites persist in `localStorage`, so they now always reach th
      - The default demo config still imports unchanged.
 
 **Out of scope**: native Tauri filesystem paths (**H2**).
+
+### Implementation
+
+| File | Change |
+|------|--------|
+| `src/services/configStorage.ts` | Export writes `sourceType`; import infers it when missing (`resolveSourceType`: `baseDemoId` or built-in demo id → `demo`, else `local`) |
+| `src/App.tsx` | `handleImportConfig` drops entries, status, refs and the IndexedDB handle of local favorites not in the imported config |
+
+### Ready-to-close check
+
+| Check | Result |
+|-------|--------|
+| `npm run lint` | ✅ 0 errors |
+| `npm run build` | ✅ built |
+| Exported JSON has `sourceType` (`local` for the mount, `demo` for the 3 demo folders) | ✅ Playwright |
+| Round trip: mount → set Default → export → Reset Demo → import → local + Default, "Choose this folder again" | ✅ Playwright |
+| Legacy file without `sourceType`: demo root and `baseDemoId` pin → `demo`; mount and its pin → `local` | ✅ Playwright |
+| Local favorites missing from the imported file are dropped | ✅ Playwright |
+| Default demo config imports unchanged | ✅ Playwright |
+| H1 regression suite | ✅ 13/13 Playwright |
+| `config.json` backwards compatible (key added, none removed) | ✅ |

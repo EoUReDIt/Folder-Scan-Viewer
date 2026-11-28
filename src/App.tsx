@@ -741,6 +741,25 @@ export default function App() {
   }, [notify]);
 
   const handleImportConfig = useCallback((nextConfig: AppConfig) => {
+    // Forget runtime data and stored handles of local favorites the imported config drops
+    const keptIds = new Set(nextConfig.favorites.map((f) => f.id));
+    const droppedLocalIds = config.favorites
+      .filter((f) => f.sourceType === 'local' && !keptIds.has(f.id))
+      .map((f) => f.id);
+    if (droppedLocalIds.length > 0) {
+      const dropFrom = <T,>(prev: Record<string, T>) => {
+        const next = { ...prev };
+        droppedLocalIds.forEach((id) => delete next[id]);
+        return next;
+      };
+      setLocalFolders(dropFrom);
+      setLocalStatus(dropFrom);
+      droppedLocalIds.forEach((id) => {
+        delete handlesRef.current[id];
+        checkedLocalIdsRef.current.delete(id);
+        void deleteHandle(id);
+      });
+    }
     setConfig(nextConfig);
     const home = getInitialFolder(nextConfig);
     const startup = getStartupSort(nextConfig, home);
@@ -749,7 +768,7 @@ export default function App() {
     setSortBy(startup.sortBy);
     setSortOrder(startup.sortOrder);
     setFoldersFirst(startup.foldersFirst);
-  }, []);
+  }, [config.favorites]);
 
   const handleDoubleClickRow = useCallback(
     (entry: FileEntry) => {
