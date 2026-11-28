@@ -34,7 +34,7 @@ function parseArgs(argv) {
   return args;
 }
 
-function computeNextVersion(current, bumpType, customVersion) {
+export function computeNextVersion(current, bumpType, customVersion) {
   const match = SEMVER_REGEX.exec(current);
   if (!match) {
     throw new Error(`Current package.json version "${current}" is not valid X.Y.Z SemVer.`);
@@ -132,9 +132,12 @@ function main() {
   }
 }
 
-try {
-  main();
-} catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
+// Run only when called as a script, so tests can import computeNextVersion
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try {
+    main();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
 }

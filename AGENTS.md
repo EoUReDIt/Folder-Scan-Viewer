@@ -16,11 +16,12 @@ Run these from the repository root:
 npm install        # Install dependencies
 npm run dev        # Start Vite dev server on http://localhost:3000
 npm run lint       # Run strict TypeScript type-checking (tsc --noEmit)
+npm test           # Run Vitest unit tests (services and scripts)
 npm run build      # Production build to dist/
 npm run preview    # Preview the built dist/ bundle locally
 ```
 
-Always run both `npm run lint` and `npm run build` after code changes before committing or ending a session.
+Always run `npm run lint`, `npm test` and `npm run build` after code changes before committing or ending a session. Run `cargo test` in `src-tauri/` after Rust changes. CI (`.github/workflows/ci.yml`) runs all four on every push to `main` and every pull request.
 
 ## 3. Repository Structure & Module Boundaries
 
@@ -41,6 +42,7 @@ Keep UI components strictly decoupled from filesystem and persistence adapters s
   - `FileIcon.tsx` & `ToastContainer.tsx` — Semantic file icons and non-blocking action notifications.
 - `src/services/startup.ts` — Startup folder and startup sort rules (`getInitialFolder`, `getStartupSort`).
 - `src/hooks/` — App state split by concern: `useToasts`, `useAppConfig` (persistence + dark class), `useFolderNavigation` (active folder, subpath, sort), `useLocalFolders` (runtime store of local favorites), `useFolderMounting` (add / choose again / reconnect), `useFavorites` (pin, remove, Default), `useKeyboardShortcuts`, `useFileActions`. Hooks own app state and may call `src/services/`. Components get state and actions as props and never import from `src/hooks/`. Hooks get their inputs as arguments rather than reading another hook's state.
+- `src/services/*.test.ts`, `scripts/*.test.mjs` — Vitest unit tests next to the code they cover; shared fixtures live in `src/test/`. Add or update tests when changing a service.
 - `src/App.tsx` — Composes the hooks, holds view state (search, filters, selection, preview, menus, scope override), derives the visible list, and renders the layout.
 
 ## 4. Design System & UI Invariants
@@ -76,6 +78,7 @@ When adding a new file category (like `compressed`):
 - [ ] Both Light and Dark modes checked for text contrast and border visibility.
 - [ ] `config.json` export/import remains backwards-compatible with existing keys.
 - [ ] `npm run lint` passes with zero errors.
+- [ ] `npm test` passes.
 - [ ] `npm run build` succeeds cleanly.
 - [ ] Final report follows the Coding Task Report format (see §7).
 

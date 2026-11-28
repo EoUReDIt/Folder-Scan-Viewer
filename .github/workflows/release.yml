@@ -45,40 +45,55 @@ concurrency:
   group: foldary-manual-release
   cancel-in-progress: false
 
+# Order: checks -> build -> push. The version bump is applied locally in each job from the same
+# starting commit and is only pushed (with the tag and release) after the installer has built,
+# so a failed build leaves the branch untouched and the run can be retried without skipping a
+# version.
 jobs:
   prepare_version:
-    name: Version Bump & Pre-Flight Validation
+    name: Checks, Version & Pre-Flight Validation
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.bump.outputs.version }}
       previous_version: ${{ steps.bump.outputs.previous_version }}
       changed: ${{ steps.bump.outputs.changed }}
-      commit_sha: ${{ steps.commit.outputs.sha }}
+      base_sha: ${{ steps.base.outputs.sha }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Record starting commit
+        id: base
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
 
       - name: Compute and sync version across manifests
         id: bump
         env:
           BUMP_TYPE: ${{ inputs.bump_type }}
           CUSTOM_VERSION: ${{ inputs.custom_version }}
-        run: |
-          if [ "$BUMP_TYPE" = "custom" ]; then
-            node scripts/bump-version.mjs --type custom --custom "$CUSTOM_VERSION" --github-output
-          else
-            node scripts/bump-version.mjs --type "$BUMP_TYPE" --github-output
-          fi
+        run: node scripts/bump-version.mjs --type "$BUMP_TYPE" --custom "$CUSTOM_VERSION" --github-output
 
-      - name: Pre-flight tag check & commit version bump
-        id: commit
+      - name: Pre-flight tag and branch checks
         env:
           RELEASE_MODE: ${{ inputs.mode }}
           NEXT_VERSION: ${{ steps.bump.outputs.version }}
@@ -91,32 +106,25 @@ jobs:
               exit 1
             fi
           fi
-
-          if [ "$VERSION_CHANGED" = "true" ]; then
-            if [ "${GITHUB_REF_TYPE}" != "branch" ]; then
-              echo "Version bumps must be triggered from a branch (current ref type: ${GITHUB_REF_TYPE})." >&2
-              exit 1
-            fi
-
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-            git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
-            if [ -f src-tauri/Cargo.lock ]; then
-              git add src-tauri/Cargo.lock
-            fi
-
-            if [ "$RELEASE_MODE" = "version_bump_only" ]; then
-              git commit -m "chore(version): bump to v${NEXT_VERSION} (no installer output)"
-            else
-              git commit -m "chore(release): prepare v${NEXT_VERSION}"
-            fi
-            git push origin HEAD:"${GITHUB_REF_NAME}"
-          else
-            echo "Version files unchanged (current version: ${NEXT_VERSION})."
+          if [ "$VERSION_CHANGED" = "true" ] && [ "${GITHUB_REF_TYPE}" != "branch" ]; then
+            echo "Version bumps must be triggered from a branch (current ref type: ${GITHUB_REF_TYPE})." >&2
+            exit 1
           fi
 
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      # Version-only mode has no build to wait for, so it pushes here, after the checks above
+      - name: Commit and push version bump (version_bump_only)
+        if: inputs.mode == 'version_bump_only' && steps.bump.outputs.changed == 'true'
+        env:
+          NEXT_VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
+          if [ -f src-tauri/Cargo.lock ]; then
+            git add src-tauri/Cargo.lock
+          fi
+          git commit -m "chore(version): bump to v${NEXT_VERSION} (no installer output)"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
 
       - name: Write job summary for version-only bump
         if: inputs.mode == 'version_bump_only'
@@ -131,21 +139,39 @@ jobs:
             echo "- **Mode**: \`version_bump_only\` (no NSIS installer built, no tag or GitHub Release created)"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  build_and_release_windows:
-    name: Build Windows NSIS Installer (.exe) & Publish Release
+  build_windows:
+    name: Build Windows NSIS Installer (.exe)
     needs: prepare_version
     if: inputs.mode == 'release_installer'
     runs-on: windows-latest
+    outputs:
+      exe_name: ${{ steps.assets.outputs.exe_name }}
+      sha256: ${{ steps.assets.outputs.sha256 }}
     steps:
-      - name: Checkout prepared commit
+      - name: Checkout starting commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.prepare_version.outputs.commit_sha }}
+          ref: ${{ needs.prepare_version.outputs.base_sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: npm
+
+      - name: Apply version bump locally (not pushed)
+        shell: bash
+        env:
+          BUMP_TYPE: ${{ inputs.bump_type }}
+          CUSTOM_VERSION: ${{ inputs.custom_version }}
+          EXPECTED_VERSION: ${{ needs.prepare_version.outputs.version }}
+        run: |
+          node scripts/bump-version.mjs --type "$BUMP_TYPE" --custom "$CUSTOM_VERSION"
+          ACTUAL=$(node -p "require('./package.json').version")
+          if [ "$ACTUAL" != "$EXPECTED_VERSION" ]; then
+            echo "Version mismatch: expected ${EXPECTED_VERSION}, got ${ACTUAL}." >&2
+            exit 1
+          fi
 
       - name: Setup Rust stable toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -163,16 +189,10 @@ jobs:
           workspaces: "./src-tauri -> target"
 
       - name: Install frontend dependencies
-        shell: pwsh
-        run: |
-          if (Test-Path "package-lock.json") {
-            npm ci
-          } else {
-            npm install
-          }
+        run: npm ci
 
-      - name: Verify TypeScript types
-        run: npm run lint
+      - name: Rust unit tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
 
       - name: Generate compliant multi-resolution Windows & Tauri icons
         run: npx --yes @tauri-apps/cli@2 icon src-tauri/icons/icon.png
@@ -198,56 +218,112 @@ jobs:
           "checksum_path=$checksumPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "sha256=$hash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: |
+            ${{ steps.assets.outputs.exe_path }}
+            ${{ steps.assets.outputs.checksum_path }}
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Push Version Bump, Tag & Publish Release
+    needs: [prepare_version, build_windows]
+    if: inputs.mode == 'release_installer'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout starting commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare_version.outputs.base_sha }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # The push only fast-forwards: if the branch moved during the build it is rejected and
+      # the release stops before a tag exists.
+      - name: Commit and push version bump
+        id: commit
+        env:
+          BUMP_TYPE: ${{ inputs.bump_type }}
+          CUSTOM_VERSION: ${{ inputs.custom_version }}
+          NEXT_VERSION: ${{ needs.prepare_version.outputs.version }}
+        run: |
+          node scripts/bump-version.mjs --type "$BUMP_TYPE" --custom "$CUSTOM_VERSION"
+          if [ "$(node -p "require('./package.json').version")" != "$NEXT_VERSION" ]; then
+            echo "Version mismatch: expected ${NEXT_VERSION}." >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/v${NEXT_VERSION}" >/dev/null; then
+            echo "Tag v${NEXT_VERSION} was created while the installer was building." >&2
+            exit 1
+          fi
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
+            if [ -f src-tauri/Cargo.lock ]; then
+              git add src-tauri/Cargo.lock
+            fi
+            git commit -m "chore(release): prepare v${NEXT_VERSION}"
+            git push origin HEAD:"refs/heads/${GITHUB_REF_NAME}"
+          else
+            echo "Version files unchanged (current version: ${NEXT_VERSION})."
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Download installer
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: release-assets
+
       - name: Publish GitHub Release & create tag atomically
-        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          COMMIT_SHA: ${{ needs.prepare_version.outputs.commit_sha }}
+          COMMIT_SHA: ${{ steps.commit.outputs.sha }}
           TAG_NAME: v${{ needs.prepare_version.outputs.version }}
-          VERSION: ${{ needs.prepare_version.outputs.version }}
           DRAFT_RELEASE: ${{ inputs.draft_release }}
           EXTRA_NOTES: ${{ inputs.release_notes }}
-          EXE_PATH: ${{ steps.assets.outputs.exe_path }}
-          EXE_NAME: ${{ steps.assets.outputs.exe_name }}
-          CHECKSUM_PATH: ${{ steps.assets.outputs.checksum_path }}
-          SHA256: ${{ steps.assets.outputs.sha256 }}
+          EXE_NAME: ${{ needs.build_windows.outputs.exe_name }}
+          SHA256: ${{ needs.build_windows.outputs.sha256 }}
         run: |
-          $notes = @(
-            "## Foldary $env:TAG_NAME",
-            "",
-            "### Windows Installer (NSIS)",
-            "- Download ``$env:EXE_NAME`` and run it to install Foldary.",
-            "- SHA-256: ``$env:SHA256``"
-          )
-          if (-not [string]::IsNullOrWhiteSpace($env:EXTRA_NOTES)) {
-            $notes += @("", "### Release Notes", $env:EXTRA_NOTES.Trim())
-          }
-          $notesText = $notes -join "`n"
+          NOTES="## Foldary ${TAG_NAME}
 
-          $argsList = @(
-            "release", "create", $env:TAG_NAME,
-            $env:EXE_PATH, $env:CHECKSUM_PATH,
-            "--target", $env:COMMIT_SHA,
-            "--title", "Foldary $env:TAG_NAME",
-            "--notes", $notesText,
-            "--generate-notes"
-          )
-          if ($env:DRAFT_RELEASE -eq "true") {
-            $argsList += "--draft"
-          }
+          ### Windows Installer (NSIS)
+          - Download \`${EXE_NAME}\` and run it to install Foldary.
+          - SHA-256: \`${SHA256}\`"
+          if [ -n "$(echo "$EXTRA_NOTES" | tr -d '[:space:]')" ]; then
+            NOTES="${NOTES}
 
-          gh @argsList
+          ### Release Notes
+          ${EXTRA_NOTES}"
+          fi
+
+          ARGS=(release create "$TAG_NAME" release-assets/*
+            --target "$COMMIT_SHA"
+            --title "Foldary ${TAG_NAME}"
+            --notes "$NOTES"
+            --generate-notes)
+          if [ "$DRAFT_RELEASE" = "true" ]; then
+            ARGS+=(--draft)
+          fi
+          gh "${ARGS[@]}"
 
       - name: Write job summary
-        shell: pwsh
         env:
           VERSION: ${{ needs.prepare_version.outputs.version }}
-          EXE_NAME: ${{ steps.assets.outputs.exe_name }}
-          SHA256: ${{ steps.assets.outputs.sha256 }}
+          EXE_NAME: ${{ needs.build_windows.outputs.exe_name }}
+          SHA256: ${{ needs.build_windows.outputs.sha256 }}
         run: |
-          @(
-            "### Foldary v$env:VERSION Released",
-            "",
-            "- **Installer**: ``$env:EXE_NAME`` (Windows NSIS)",
-            "- **SHA-256**: ``$env:SHA256``"
-          ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          {
+            echo "### Foldary v${VERSION} Released"
+            echo ""
+            echo "- **Installer**: \`${EXE_NAME}\` (Windows NSIS)"
+            echo "- **SHA-256**: \`${SHA256}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
