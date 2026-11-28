@@ -26,9 +26,9 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | M4 | 🟡 Medium | Hidden-file detection differs between native and fallback pickers | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#7](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/7) |
 | M5 | 🟡 Medium | Single-token fuzzy search over-matches with no relevance ranking | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#8](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/8) |
 | M6 | 🟡 Medium | Grid keyboard scroll-sync: rapid ↓/↑ on a 2,500-row folder sometimes drops a key and throws React error #185 (update depth exceeded). Present since M2; seen in 2–3 of 8 runs of the M2 test, old and new code alike | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#9](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/9) |
-| L1 | Low | Unused AI Studio leftovers (`@google/genai`, `express`, `dotenv`, `motion`, `tsx`, Gemini `.env.example`, `metadata.json`); build tools in `dependencies` | ✅ Ready to close | [EoUReDIt/Folder-Scan-Viewer#10](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/10) |
+| L1 | Low | Unused AI Studio leftovers (`@google/genai`, `express`, `dotenv`, `motion`, `tsx`, Gemini `.env.example`, `metadata.json`); build tools in `dependencies` | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#10](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/10) |
 | L2 | Low | Removing a local favorite leaks its `localFolders` entry | ✅ Merged | [#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) (folded into H1) |
-| L3 | Low | Accessibility: rows not focusable, context menu lacks focus/arrow keys, settings modal lacks focus trap | ⏳ | — |
+| L3 | Low | Accessibility: rows not focusable, context menu lacks focus/arrow keys, settings modal lacks focus trap | 🟡 In progress | (PR pending) |
 | L4 | Low | `App.tsx` (879 lines) mixes favorites, mounting and shortcuts; extract hooks | ⏳ | — |
 | L5 | Low | No tests; no CI on push/PR; version-bump commit is pushed before the installer build succeeds | ⏳ | — |
 | L6 | Low | `bump-version.mjs` doesn't update `package-lock.json` (fixed manually in `e918ec6`) | ⏳ | — |
@@ -743,7 +743,7 @@ Scrolling with the mouse or wheel is not affected: it never mixes with sync keyb
 | 📝 Proposal | ✅ | See Proposal below |
 | 🔧 Implementation | ✅ | See Implementation below |
 | ✅ Ready-to-close check | ✅ | See below |
-| 🏁 Closed | ⏳ | |
+| 🏁 Closed | ✅ | Merged 2026-11-28 (`d753ca4`) |
 
 ### Problem
 
@@ -798,3 +798,55 @@ Effect: a slower `npm install` with about a dozen unused packages, a misleading 
 | Release workflow and `tauri.conf.json` | ✅ `npm ci` installs devDependencies (nothing sets `--omit=dev` or `NODE_ENV=production`); `beforeBuildCommand` is still `npm run build` |
 | Playwright L1 test, production build: all 3 demo images served as JPEG, demo grid renders, no failed requests, no console errors | ✅ 6/6 |
 | H1 / H2 / H3 / M1 / M2 / M3 / M4 / M5 / M6 regressions, web check | ✅ 13/13 · 23/23 · 14/14 · 18/18 · 24/24 · 22/22 · 16/16 · 17/17 · 7/7 · 1/1 |
+
+---
+
+## L3 — Keyboard and screen-reader access for the grid, context menu and settings
+
+| Stage | Status | Notes |
+|-------|--------|-------|
+| 📋 Document | ✅ | This section |
+| 🔀 PR | ⏳ | |
+| 📝 Proposal | ✅ | See Proposal below |
+| 🔧 Implementation | ⏳ | |
+| ✅ Ready-to-close check | ⏳ | |
+| 🏁 Closed | ⏳ | |
+
+### Problem
+
+| Area | What happens today |
+|------|--------------------|
+| File grid (`FileGrid.tsx`) | Neither the table nor its rows can take focus. ↑/↓/Enter work only because `App.tsx` listens on `window`, so Tab never lands on the grid, nothing shows where keyboard focus is, and a screen reader is never told which row is selected. The table has no accessible name |
+| Context menu (`ContextMenu.tsx`) | Opens only on right-click: there is no Shift+F10 or Menu-key equivalent. Focus stays where it was, so the items cannot be reached by keyboard (Tab goes to the page behind the menu). ↑/↓ while the menu is open move the grid selection underneath it instead of the menu highlight. After closing, focus is not returned |
+| Settings modal (`SettingsModal.tsx`) | `role="dialog"` and `aria-modal` are set, but opening it does not move focus into it, Tab walks out into the page behind, and closing does not return focus to the button that opened it. The tab strip is a row of plain buttons with no tab semantics |
+
+### Proposal
+
+1. **Grid as one focusable widget**
+   - The `<table>` becomes `role="grid"` with `tabIndex={0}`, an `aria-label` naming the folder, and `aria-activedescendant` pointing at the selected row. Each row gets a stable `id` and `aria-selected`. This keeps a single Tab stop and works with virtualization, because the selected row is always scrolled into view and rendered (M6).
+   - When the grid has keyboard focus, the selected row shows a 2px accent outline (`#0067C0` light / `#60CDFF` dark). Clicking a row focuses the grid as well.
+   - The global ↑/↓/Enter/Space/Backspace shortcuts stay as they are, so the search box keeps driving the grid.
+2. **Keyboard-operable context menu**
+   - With the grid focused, **Shift+F10** or the **Menu** key opens the menu for the selected row, anchored to that row.
+   - On open, focus moves to the first item. ↑/↓ move between items and wrap; Home/End jump to the ends; Enter/Space activate; Esc and Tab close. Items use a roving `tabIndex`, and separators get `role="separator"`. The menu is labelled "Actions for <name>".
+   - While the menu is open, the global grid shortcuts are suspended.
+   - On close, focus goes back to where it was before the menu opened.
+3. **Settings modal focus management**
+   - On open, focus moves into the dialog panel. Tab and Shift+Tab cycle inside it. On close (Esc, ×, or a click on the backdrop), focus returns to the element that opened it.
+   - The tab strip uses `role="tablist"` / `tab` / `tabpanel` with `aria-selected` and `aria-controls`, and ←/→ move between tabs.
+4. **Verify**
+   - Lint and build pass.
+   - A Playwright test of the production build covers:
+     - Tab reaches the grid
+     - `aria-activedescendant` follows ↑/↓
+     - Shift+F10 opens the menu with focus on its first item
+     - arrows wrap, Esc returns focus to the grid
+     - ↑/↓ inside the menu leave the selection alone
+     - the settings dialog takes focus, traps Tab both ways and returns focus on close
+     - tab arrows switch panels
+   - The H1–M6 and L1 regression tests pass, and light and dark screenshots show the focus ring.
+
+### Out of scope
+
+- The Favorites dropdown and other TopBar controls. They are already native buttons; a full menu pattern for the dropdown can follow separately if needed.
+- A roving `tabIndex` across individual cells. The app's model is row selection, not cell navigation.
