@@ -24,7 +24,8 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | M2 | 🟡 Medium | Scan cap (2,500) leaks; fallback picker has no cap or `node_modules`/`.git` skip; no grid virtualization | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#5](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/5) |
 | M3 | 🟡 Medium | "Open Containing Folder" silently persists `includeSubfolders = false` | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#6](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/6) |
 | M4 | 🟡 Medium | Hidden-file detection differs between native and fallback pickers | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#7](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/7) |
-| M5 | 🟡 Medium | Single-token fuzzy search over-matches with no relevance ranking | 🟡 In progress | (PR pending) |
+| M5 | 🟡 Medium | Single-token fuzzy search over-matches with no relevance ranking | ✅ Ready to close | [EoUReDIt/Folder-Scan-Viewer#8](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/8) |
+| M6 | 🟡 Medium | Grid keyboard scroll-sync: rapid ↓/↑ on a 2,500-row folder sometimes drops a key and throws React error #185 (update depth exceeded). Present since M2; seen in 2–3 of 8 runs of the M2 test, old and new code alike | ⏳ | — |
 | L1 | Low | Unused AI Studio leftovers (`@google/genai`, `express`, `dotenv`, `motion`, `tsx`, Gemini `.env.example`, `metadata.json`); build tools in `dependencies` | ⏳ | — |
 | L2 | Low | Removing a local favorite leaks its `localFolders` entry | ✅ Merged | [#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) (folded into H1) |
 | L3 | Low | Accessibility: rows not focusable, context menu lacks focus/arrow keys, settings modal lacks focus trap | ⏳ | — |
@@ -573,10 +574,10 @@ The Windows *Hidden* attribute cannot be read from a browser: neither `File` nor
 | Stage | Status | Notes |
 |-------|--------|-------|
 | 📋 Document | ✅ | This section |
-| 🔀 PR | ⏳ | |
+| 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#8](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/8) |
 | 📝 Proposal | ✅ | See Proposal below |
-| 🔧 Implementation | ⏳ | |
-| ✅ Ready-to-close check | ⏳ | |
+| 🔧 Implementation | ✅ | See Implementation below |
+| ✅ Ready-to-close check | ✅ | See below |
 | 🏁 Closed | ⏳ | |
 
 ### Problem
@@ -643,3 +644,26 @@ Consequences:
 - Highlighting the matched letters in names.
 - Indexing or search across folders that are not open.
 
+### Implementation
+
+| Area | Files | What changed |
+|------|-------|--------------|
+| Match tiers | `src/services/fileProvider.ts` | `queryMatchTier` returns 4 word start, 3 name, 2 path, 1 fuzzy or 0. `matchesQuery` is kept as `tier > 0` |
+| Fuzzy fallback | `src/services/fileProvider.ts` | `matchQueryInScope` drops fuzzy hits whenever any entry reaches tier 2+, and reports `closeMatches`. It runs on the scope + hidden + recency base, before the type filter |
+| One code path | `src/services/fileProvider.ts` | New `filterAndSortEntriesWithInfo` returns `{ entries, closeMatches }`. `filterAndSortEntries` wraps it. `computeCategoryCounts` uses the same base and matcher, so sidebar counts equal the grid |
+| Ranking | `src/services/fileProvider.ts` | With a query, rows sort by the folders-first group, then tier (highest first), then the column sort |
+| Selection | `src/App.tsx` | When the query text changes and is not empty, the top row is selected, so Enter opens the best match |
+| Close-match label | `src/components/SortToolbar.tsx` | In fuzzy fallback the count reads `N close matches` (muted mono text with a tooltip). **Change from proposal item 5:** the planned `N items · close matches` was too wide and wrapped the toolbar onto a second line, shifting the grid down. Replacing the word keeps the toolbar on one line |
+
+### Ready-to-close check
+
+| Check | Result |
+|-------|--------|
+| `npm run lint` | ✅ |
+| `npm run build` | ✅ |
+| Unit checks on demo data (`tsx`): `rep` 14 → 4, `mp4` excludes `.mp3`, `png` excludes `.jpg`/`.csv`, `rprt` falls back to fuzzy, tiers descend, counts equal the grid for every folder and query | ✅ 18/18 |
+| Playwright on demo workspace: `retro`, `png`, `rep` drop unrelated names; `report` gives Reports and Q4_Report.pdf first under *Recent*, then path-only hits; the top row is selected while typing; Enter opens the top match; `rprt` shows the close-match label on the toolbar's first line; sidebar *All* = rows; Esc restores the full list; multi-word path matching unchanged; no page errors | ✅ 17/17 |
+| Same M5 test on the code before the fix | ❌ 6 failures, as described in Problem |
+| H1 / H2 / H3 / M1 / M2 / M3 / M4 regressions, web check | ✅ 13/13 · 23/23 · 14/14 · 18/18 · 24/24 · 22/22 · 16/16 · 1/1 |
+| M2 test flake (rapid arrow keys, React #185) | 🟡 Pre-existing: old code fails 3/8 runs, new code 2/8. Not caused by M5; logged as **M6** |
+| Light + dark screenshots | ✅ |

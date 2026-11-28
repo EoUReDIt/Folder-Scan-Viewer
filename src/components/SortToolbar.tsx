@@ -7,6 +7,8 @@ interface SortToolbarProps {
   startupBehavior: StartupBehavior;
   includeSubfolders: boolean;
   totalVisible: number;
+  /** The search found nothing directly and shows fuzzy matches only. */
+  closeMatches: boolean;
   hasActiveFilters: boolean;
   onQuickSort: (field: SortField, defaultOrder: SortOrder) => void;
   onToggleIncludeSubfolders: () => void;
@@ -30,6 +32,7 @@ export function SortToolbar({
   startupBehavior,
   includeSubfolders,
   totalVisible,
+  closeMatches,
   hasActiveFilters,
   onQuickSort,
   onToggleIncludeSubfolders,
@@ -102,8 +105,23 @@ export function SortToolbar({
           </button>
         )}
 
-        <span className="font-mono text-xs text-[#5C5C5C] dark:text-[#A6A6A6] tabular-nums whitespace-nowrap shrink-0">
-          {totalVisible} {totalVisible === 1 ? 'item' : 'items'}
+        {/* Close matches replace the item count instead of adding to it, so the toolbar keeps its width */}
+        <span
+          className="font-mono text-xs text-[#5C5C5C] dark:text-[#A6A6A6] tabular-nums whitespace-nowrap shrink-0"
+          title={
+            closeMatches
+              ? 'Nothing matched exactly; showing names that contain these letters in order'
+              : undefined
+          }
+        >
+          {totalVisible}{' '}
+          {closeMatches
+            ? totalVisible === 1
+              ? 'close match'
+              : 'close matches'
+            : totalVisible === 1
+              ? 'item'
+              : 'items'}
         </span>
       </div>
     </div>
