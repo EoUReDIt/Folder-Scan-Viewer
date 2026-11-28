@@ -20,8 +20,8 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | H1 | 🔴 High | Mounted local folders (and a local Default Folder) are never persisted; reload silently falls back to a demo folder | ✅ Merged | [#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) |
 | H2 | 🔴 High | Desktop build has no native filesystem layer: fake `Local\…` paths, no "Open file" action, `csp: null`, `core:default` only | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#3](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/3) |
 | H3 | 🔴 High | `config.json` export drops `sourceType`; re-imported local favorites become empty demo folders | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#2](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/2) |
-| M1 | 🟡 Medium | Native-picker folders get `dateModified: Date.now()`; skews recency filter and Recent sort | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#4](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/4) |
-| M2 | 🟡 Medium | Scan cap (2,500) leaks; fallback picker has no cap or `node_modules`/`.git` skip; no grid virtualization | ⏳ | — |
+| M1 | 🟡 Medium | Native-picker folders get `dateModified: Date.now()`; skews recency filter and Recent sort | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#4](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/4) |
+| M2 | 🟡 Medium | Scan cap (2,500) leaks; fallback picker has no cap or `node_modules`/`.git` skip; no grid virtualization | 🟡 In progress | (PR pending) |
 | M3 | 🟡 Medium | "Open Containing Folder" silently persists `includeSubfolders = false` | ⏳ | — |
 | M4 | 🟡 Medium | Hidden-file detection differs between native and fallback pickers | ⏳ | — |
 | M5 | 🟡 Medium | Single-token fuzzy search over-matches with no relevance ranking | ⏳ | — |
@@ -273,7 +273,7 @@ The web build keeps working unchanged. Every native path is behind an `isNativeS
 | 📝 Proposal | ✅ | See Proposal below |
 | 🔧 Implementation | ✅ | See Implementation below |
 | ✅ Ready-to-close check | ✅ | Ready, pending the owner's merge |
-| 🏁 Closed | ⏳ | |
+| 🏁 Closed | ✅ | Merged 2026-11-28 (`cf6724f`) |
 
 ### Problem
 
@@ -333,3 +333,65 @@ There are no UI component changes. The grid and preview already call the formatt
 | Playwright: folder dates match their newest descendant, empty folder shows `—` / `Unknown`, *Recent* order, "Last 7 days" filter, same dates after reconnecting, fallback picker gives the same dates | ✅ 18/18 |
 | H1 / H2 / H3 regressions, web mode shows no native actions | ✅ 13/13 · 23/23 · 14/14 · 1/1 |
 | Light + dark screenshots | ✅ |
+
+## M2 — Scan limits leak, fallback picker is unlimited, grid is not virtualized
+
+| Stage | Status | Notes |
+|-------|--------|-------|
+| 📋 Document | ✅ | This section |
+| 🔀 PR | ⏳ | |
+| 📝 Proposal | ✅ | See Proposal below |
+| 🔧 Implementation | ⏳ | |
+| ✅ Ready-to-close check | ⏳ | |
+| 🏁 Closed | ⏳ | |
+
+### Problem
+
+The desktop scan (`src-tauri/src/scan.rs`, H2) enforces its limits. The two browser paths in `src/services/fileProvider.ts` do not:
+
+- **The cap leaks.** `scanDirectoryHandle` checks `entries.length > 2500` only when it *enters* a folder. One folder with 10,000 files adds all 10,000, and sibling folders keep adding after the cap.
+- **Depth is off by one.** The browser scan stops at `depth > 8`, which lists 9 levels. The desktop scan lists 8.
+- **The fallback picker has no limits.** `convertFileListToEntries` (`<input webkitdirectory>`) has no cap or depth limit, and it does not skip `node_modules` or `.git`. Picking a project folder can produce hundreds of thousands of entries.
+- **No feedback.** Browser scans never say they were cut short. Only the desktop shell shows the "only the first N items" toast.
+- **The grid renders every row.** `FileGrid.tsx` mounts one `<tr>` per entry. Several thousand rows make typing in search, changing sort and ↑/↓ visibly slow. It also uses `scrollIntoView`, which can leave the selected row under the sticky header.
+
+### Proposal
+
+1. **One set of limits** (`src/services/fileProvider.ts`)
+   - Export `SCAN_LIMITS = { maxDepth: 8, maxEntries: 2500, skippedFolders: ['node_modules', '.git'] }`.
+   - A comment notes that the values mirror `scan.rs`.
+   - `ScannedDirectory` gains `truncated: boolean`.
+2. **`scanDirectoryHandle`**
+   - Check the cap before *every* push. Once the cap is hit, set `truncated` and stop the walk.
+   - Recurse only while `depth + 1 < maxDepth`, matching Rust.
+3. **`convertFileListToEntries`** (fallback picker)
+   - Drop files under a skipped folder or deeper than `maxDepth`.
+   - Before adding a file, count the ancestor folders it still needs. If they don't fit under the cap, stop and set `truncated`.
+   - The browser still hands over the full `FileList`; that cannot be avoided. Entries, sorting and rendering stay bounded.
+4. **Feedback** (`src/App.tsx`)
+   - Generalize `reportNativeScan` to `reportTruncatedScan(name, count, truncated)`.
+   - Call it from every mount, refill and reconnect path, browser and desktop alike.
+5. **Grid virtualization** (`src/components/FileGrid.tsx`), written in-house with no new dependency
+   - Rows are a fixed 38px. Lists with more than 150 rows render only the visible window plus 12 rows of overscan, with spacer rows above and below so the scrollbar keeps its real size.
+   - Smaller lists render exactly as today.
+   - The visible window is recomputed on scroll and on resize (`ResizeObserver`).
+   - Keyboard scroll sync scrolls by row index. A row that is not rendered can still be brought into view, and the selected row clears the sticky header.
+   - The table gets `aria-rowcount`, and each row gets `aria-rowindex`, so screen readers know the real size.
+6. **Verify**
+   - `npm run lint` and `npm run build` pass. `cargo test` is unchanged.
+   - Playwright with a mocked `showDirectoryPicker`:
+     - one folder of 3,000 files lists exactly 2,500 and shows the "large folder" toast
+     - a 12-level tree lists 8 levels
+     - `node_modules` is skipped
+   - Fallback picker on a disk fixture: the same cap, depth and skip results.
+   - Grid with 2,500 entries:
+     - fewer than 100 `<tr>` in the DOM
+     - scrolling to the bottom shows the last item
+     - `End`-style ↓ navigation keeps the selected row visible and not under the header
+     - search filtering stays responsive
+   - H1, H2, H3 and M1 regression tests still pass. Light and dark screenshots.
+
+**Out of scope**:
+- Raising the cap or paging past it.
+- A cancellable or progressive scan UI.
+- Hidden-file detection (**M4**).
