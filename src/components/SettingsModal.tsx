@@ -387,7 +387,7 @@ export function SettingsModal({
                             </span>
                           )}
                         </div>
-                        <div className="font-mono text-[11px] text-[#5C5C5C] dark:text-[#8E8E8E] truncate">
+                        <div className="font-mono text-[11px] text-[#5C5C5C] dark:text-[#A6A6A6] truncate">
                           {fav.path}
                         </div>
                       </div>

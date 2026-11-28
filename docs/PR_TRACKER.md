@@ -33,7 +33,8 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | L5 | Low | No tests; no CI on push/PR; version-bump commit is pushed before the installer build succeeds | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#13](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/13) |
 | L6 | Low | `bump-version.mjs` doesn't update `package-lock.json` (fixed manually in `e918ec6`) | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#14](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/14) |
 | L7 | Low | Preview pane dark background `#222222` drifts from documented tokens | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#15](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/15) |
-| L8 | Low | Sort toolbar dark background is the canvas `#272727`, not the documented toolbar `#2C2C2C`; its "Saved per folder" hint is below AA contrast | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#16](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/16) |
+| L8 | Low | Sort toolbar dark background is the canvas `#272727`, not the documented toolbar `#2C2C2C`; its "Saved per folder" hint is below AA contrast | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#16](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/16) |
+| L9 | Low | Secondary greys `#767676` / `#8E8E8E` fall below AA contrast on several backgrounds (search box, Backspace hint, sidebar counts, settings paths) | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#17](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/17) |
 
 ---
 
@@ -1164,7 +1165,7 @@ No `#222222` is left in `src/`.
 | 📝 Proposal | ✅ | Below |
 | 🔧 Implementation | ✅ | 2 class changes in `SortToolbar.tsx` |
 | ✅ Ready-to-close check | ✅ | All checks pass; see below |
-| 🏁 Closed | ⏳ | |
+| 🏁 Closed | ✅ | Merged in `a8500fb` |
 
 ### Problem
 
@@ -1206,4 +1207,69 @@ While checking contrast for the change, the "· Saved per folder" / "· Global s
 ### Out of scope
 
 - `#767676` is also used in `TopBar.tsx`, `Sidebar.tsx` and `FileGrid.tsx`. On white it passes (4.54:1); whether any of those sit on `#F3F3F3`/`#F9F9F9` wasn't checked here.
+
+---
+
+## L9 — Secondary greys meet AA contrast
+
+| Stage | Status | Notes |
+|-------|--------|-------|
+| 📋 Document | ✅ | This section |
+| 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#17](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/17) |
+| 📝 Proposal | ✅ | Below |
+| 🔧 Implementation | ✅ | 5 class changes in 4 files |
+| ✅ Ready-to-close check | ✅ | All checks pass; see below |
+| 🏁 Closed | ⏳ | |
+
+### Problem
+
+Found during L8. The app uses `#767676` (light) / `#8E8E8E` (dark) for some small secondary text. Those greys only just pass WCAG AA (4.5:1) on white and on `#272727`, and fail on the slightly tinted backgrounds they actually sit on:
+
+| Where | Text | Background | Contrast |
+|-------|------|------------|----------|
+| Search placeholder (`TopBar.tsx:277`) | dark `#8E8E8E` | `#2C2C2C` | 4.26:1 🔴 |
+| `Ctrl+K` hint (`TopBar.tsx:289`) | dark `#8E8E8E` | `#2C2C2C` | 4.26:1 🔴 |
+| "(Backspace)" hint (`FileGrid.tsx:206`) | light `#767676` | `#FAFAFA` | 4.35:1 🔴 |
+| Category counts (`Sidebar.tsx:236`) | dark `#8E8E8E` | active `#2F2F2F` / hover `#2A2A2A` | 4.09:1 / 4.38:1 🔴 |
+| Favorite paths in Settings (`SettingsModal.tsx:390`) | dark `#8E8E8E` | `#2C2C2C` | 4.26:1 🔴 |
+
+The other half of each pair passes (for example the light placeholder is 4.54:1 on white), but only just.
+
+Checked and fine as they are (non-text, which needs 3:1):
+
+- The toggle-switch border (`Sidebar.tsx:85`): 3.78:1 to 4.97:1 on the sidebar and its hover colour.
+- The breadcrumb chevron icon (`TopBar.tsx:203`): dark `#8E8E8E` on `#202020`, 4.97:1.
+- The decorative empty-state icons in `FileGrid.tsx` are not covered by this check.
+
+### Proposal
+
+Use the app's existing secondary text colours, `#5C5C5C` (light) / `#A6A6A6` (dark), for all five text spots above, as L8 did for the sort toolbar hint. They reach 6.41:1 or more in light mode and 5.50:1 or more in dark mode on every background listed. The toggle border and icons stay as they are.
+
+### Implementation
+
+| Change | File |
+|--------|------|
+| Search placeholder `#767676` / `#8E8E8E` → `#5C5C5C` / `#A6A6A6` (line 277) | `src/components/TopBar.tsx` |
+| `Ctrl+K` hint `#767676` / `#8E8E8E` → `#5C5C5C` / `#A6A6A6` (line 289) | `src/components/TopBar.tsx` |
+| "(Backspace)" hint `#767676` / `#8E8E8E` → `#5C5C5C` / `#A6A6A6` (line 206) | `src/components/FileGrid.tsx` |
+| Category counts dark `#8E8E8E` → `#A6A6A6` (line 236) | `src/components/Sidebar.tsx` |
+| Favorite paths dark `#8E8E8E` → `#A6A6A6` (line 390) | `src/components/SettingsModal.tsx` |
+
+After this change `#767676` is used only for the toggle-switch border, which needs 3:1 and passes.
+
+### Ready to close
+
+| Check | Result |
+|-------|--------|
+| `npm run lint` | ✅ 0 errors |
+| `npm test` | ✅ 38 tests |
+| `npm run build` | ✅ JS bundle unchanged at 331.9 kB |
+| Contrast after the change | ✅ Light 6.41:1 or more, dark 5.50:1 or more, on every background in the table above |
+| Screenshots, dark and light | ✅ The placeholder still reads lighter than typed text; counts and paths stay secondary to their labels |
+| Browser regression suite (production build) | ✅ L1 6, H1 13, H2 23, H3 14, M1 18, M2 24, M3 22, M4 16, M5 17, M6 7, L3 37, web-mode check. All unchanged, 0 failures |
+| `cargo test` | ➖ Not run; no Rust changes |
+
+### Out of scope
+
+- The decorative empty-state icons in `FileGrid.tsx` (`#8E8E8E` / `#6E6E6E`) were not checked; they carry no information that the text beside them doesn't.
 

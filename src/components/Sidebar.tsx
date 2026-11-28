@@ -233,7 +233,7 @@ export function Sidebar({
                     />
                     <span className="truncate">{label}</span>
                   </span>
-                  <span className="font-mono text-[11px] text-[#5C5C5C] dark:text-[#8E8E8E] tabular-nums shrink-0">
+                  <span className="font-mono text-[11px] text-[#5C5C5C] dark:text-[#A6A6A6] tabular-nums shrink-0">
                     {count}
                   </span>
                 </button>
