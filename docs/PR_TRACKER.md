@@ -17,16 +17,16 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 
 | ID | Severity | Finding | Status | PR |
 |----|----------|---------|--------|----|
-| H1 | 🔴 High | Mounted local folders (and a local Default Folder) are never persisted; reload silently falls back to a demo folder | 🟡 In progress | [#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) |
+| H1 | 🔴 High | Mounted local folders (and a local Default Folder) are never persisted; reload silently falls back to a demo folder | ✅ Merged | [#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) |
 | H2 | 🔴 High | Desktop build has no native filesystem layer: fake `Local\…` paths, no "Open file" action, `csp: null`, `core:default` only | ⏳ | — |
-| H3 | 🔴 High | `config.json` export drops `sourceType`; re-imported local favorites become empty demo folders | ⏳ | — |
+| H3 | 🔴 High | `config.json` export drops `sourceType`; re-imported local favorites become empty demo folders | 🟡 In progress | (PR pending) |
 | M1 | 🟡 Medium | Native-picker folders get `dateModified: Date.now()`; skews recency filter and Recent sort | ⏳ | — |
 | M2 | 🟡 Medium | Scan cap (2,500) leaks; fallback picker has no cap or `node_modules`/`.git` skip; no grid virtualization | ⏳ | — |
 | M3 | 🟡 Medium | "Open Containing Folder" silently persists `includeSubfolders = false` | ⏳ | — |
 | M4 | 🟡 Medium | Hidden-file detection differs between native and fallback pickers | ⏳ | — |
 | M5 | 🟡 Medium | Single-token fuzzy search over-matches with no relevance ranking | ⏳ | — |
 | L1 | Low | Unused AI Studio leftovers (`@google/genai`, `express`, `dotenv`, `motion`, `tsx`, Gemini `.env.example`, `metadata.json`); build tools in `dependencies` | ⏳ | — |
-| L2 | Low | Removing a local favorite leaks its `localFolders` entry | 🟡 In progress | [#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) (folded into H1) |
+| L2 | Low | Removing a local favorite leaks its `localFolders` entry | ✅ Merged | [#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) (folded into H1) |
 | L3 | Low | Accessibility: rows not focusable, context menu lacks focus/arrow keys, settings modal lacks focus trap | ⏳ | — |
 | L4 | Low | `App.tsx` (879 lines) mixes favorites, mounting and shortcuts; extract hooks | ⏳ | — |
 | L5 | Low | No tests; no CI on push/PR; version-bump commit is pushed before the installer build succeeds | ⏳ | — |
@@ -43,8 +43,8 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) (draft) |
 | 📝 Proposal | ✅ | See Proposal below |
 | 🔧 Implementation | ✅ | See Implementation below |
-| ✅ Ready-to-close check | ✅ | Passed; awaiting owner go-ahead to merge |
-| 🏁 Closed | ⏳ | |
+| ✅ Ready-to-close check | ✅ | Passed |
+| 🏁 Closed | ✅ | Merged to `main` as `f61b100` |
 
 ### Problem
 
@@ -108,3 +108,39 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | Light and dark screenshots of new state | ✅ checked |
 | `config.json` keys unchanged (backwards compatible) | ✅ |
 | "Reconnect folder" permission prompt (`needs-permission`) | 🟡 Not automatable headless (test handles are always granted); needs a manual check in Chrome/Edge |
+
+---
+
+## H3 — `config.json` export drops `sourceType`
+
+| Stage | Status | Notes |
+|-------|--------|-------|
+| 📋 Document | ✅ | This section |
+| 🔀 PR | ⏳ | |
+| 📝 Proposal | ✅ | See Proposal below |
+| 🔧 Implementation | ⏳ | |
+| ✅ Ready-to-close check | ⏳ | |
+| 🏁 Closed | ⏳ | |
+
+### Problem
+
+`exportConfigJsonString` (`src/services/configStorage.ts`) writes each favorite without `sourceType`. On import, `validateAndNormalizeConfig` defaults a missing `sourceType` to `'demo'`. So exporting a config that contains a mounted folder (or a pinned subfolder of one) and importing it again turns those favorites into demo folders. A demo folder with an unknown id has no entries, so the user sees an empty folder with no way to reconnect it. If that favorite was the Default Folder, the app opens into an empty folder.
+
+Since H1, local favorites persist in `localStorage`, so they now always reach the export.
+
+### Proposal
+
+1. **Export `sourceType`** in `exportConfigJsonString` for every favorite. This adds a key and removes none, so older Foldary builds can still read the file.
+2. **Infer `sourceType` for files exported before this fix** in `validateAndNormalizeConfig`. When the key is missing:
+   - `'demo'` if the favorite has a `baseDemoId` or its id is a built-in demo folder (`fav_projects`, `fav_downloads`, `fav_invoices`);
+   - otherwise `'local'`, because every favorite the app creates without those markers is a mounted folder or a pinned subfolder of one.
+   An explicit `sourceType` is used as given, as today.
+3. **Clean up stale handles on import** (`src/App.tsx`, `handleImportConfig`): delete the stored directory handle and loaded entries for any local favorite that is not in the imported config. Imported local favorites go through the H1 restore path: they reopen on their own when the same browser still holds their handle, and otherwise show "Choose folder again".
+4. **Verify**
+   - `npm run lint` and `npm run build` pass.
+   - Playwright in Chromium:
+     - Round trip: mount a folder, set it as Default, export, reset the workspace, import. The favorite comes back as local and the Default, showing "Choose folder again" rather than an empty folder.
+     - A legacy file with no `sourceType`: demo favorites stay demo and the others become local.
+     - The default demo config still imports unchanged.
+
+**Out of scope**: native Tauri filesystem paths (**H2**).
