@@ -21,8 +21,8 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | H2 | 🔴 High | Desktop build has no native filesystem layer: fake `Local\…` paths, no "Open file" action, `csp: null`, `core:default` only | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#3](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/3) |
 | H3 | 🔴 High | `config.json` export drops `sourceType`; re-imported local favorites become empty demo folders | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#2](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/2) |
 | M1 | 🟡 Medium | Native-picker folders get `dateModified: Date.now()`; skews recency filter and Recent sort | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#4](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/4) |
-| M2 | 🟡 Medium | Scan cap (2,500) leaks; fallback picker has no cap or `node_modules`/`.git` skip; no grid virtualization | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#5](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/5) |
-| M3 | 🟡 Medium | "Open Containing Folder" silently persists `includeSubfolders = false` | ⏳ | — |
+| M2 | 🟡 Medium | Scan cap (2,500) leaks; fallback picker has no cap or `node_modules`/`.git` skip; no grid virtualization | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#5](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/5) |
+| M3 | 🟡 Medium | "Open Containing Folder" silently persists `includeSubfolders = false` | 🟡 In progress | (PR pending) |
 | M4 | 🟡 Medium | Hidden-file detection differs between native and fallback pickers | ⏳ | — |
 | M5 | 🟡 Medium | Single-token fuzzy search over-matches with no relevance ranking | ⏳ | — |
 | L1 | Low | Unused AI Studio leftovers (`@google/genai`, `express`, `dotenv`, `motion`, `tsx`, Gemini `.env.example`, `metadata.json`); build tools in `dependencies` | ⏳ | — |
@@ -342,8 +342,8 @@ There are no UI component changes. The grid and preview already call the formatt
 | 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#5](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/5) |
 | 📝 Proposal | ✅ | See Proposal below |
 | 🔧 Implementation | ✅ | See Implementation below |
-| ✅ Ready-to-close check | ✅ | All checks pass; awaiting merge approval |
-| 🏁 Closed | ⏳ | |
+| ✅ Ready-to-close check | ✅ | Ready, pending the owner's merge |
+| 🏁 Closed | ✅ | Merged 2026-11-28 (`229f253`) |
 
 ### Problem
 
@@ -420,3 +420,53 @@ One deviation from the proposal: the fallback picker also lists in-range folders
 | Grid with 2,500 rows: under 100 `<tr>` in the DOM, 38px pitch, bottom and mid-list scroll render the right rows, ↓×60 / ↑×30 keep the selection visible below the header, search settles in under 1s | ✅ 24/24 total |
 | H1 / H2 / H3 / M1 regressions, web mode shows no native actions | ✅ 13/13 · 23/23 · 14/14 · 18/18 · 1/1 |
 | Light + dark screenshots | ✅ |
+
+## M3 — "Open Containing Folder" silently turns off *Include subfolders* for good
+
+| Stage | Status | Notes |
+|-------|--------|-------|
+| 📋 Document | ✅ | This section |
+| 🔀 PR | ⏳ | |
+| 📝 Proposal | ✅ | See Proposal below |
+| 🔧 Implementation | ⏳ | |
+| ✅ Ready-to-close check | ⏳ | |
+| 🏁 Closed | ⏳ | |
+
+### Problem
+
+The context-menu action *Open Containing Folder* (`src/App.tsx`, `onOpenContainingFolder`) runs `setConfig({ ...prev, includeSubfolders: false })`.
+
+- `includeSubfolders` is a **global, saved** setting: it goes to `localStorage` and into the exported `config.json`.
+- One click on a menu item therefore changes the scope for every folder and every later session. Nothing says so. The only hint is the toolbar label changing to *Current Folder Only*.
+- Switching to another favorite, going up a folder or reloading does not bring the scope back. The user has to find the *Include subfolders* switch and turn it on again.
+- The action also loses its place: the file the menu was opened on is not selected in the folder that opens.
+
+### Proposal
+
+1. **A temporary scope, not a saved one** (`src/App.tsx`)
+   - New session-only state: `scopeOverride: { folderId: string; subpath: string } | null`. It is not saved and never reaches `config.json`.
+   - The scope in use becomes `includeSubfolders = config.includeSubfolders && !overrideMatches`, where `overrideMatches` means the override's folder and subpath equal the active folder and `currentSubpath`.
+   - That one value replaces `config.includeSubfolders` everywhere it is read: `filterAndSortEntries`, `computeCategoryCounts`, `Sidebar` and `SortToolbar`.
+   - The override ends by itself on any navigation (another favorite, breadcrumb, Backspace, drill-in), because the folder or subpath no longer matches. The navigation code does not need to change.
+2. **Open Containing Folder** (`src/App.tsx`, `src/components/ContextMenu.tsx`)
+   - The callback receives the whole entry, not just `parentPath`.
+   - It navigates to `entry.parentPath`, sets the override only when subfolders are on (otherwise the scope is already *Current Folder Only*), and selects the entry so the file is highlighted and scrolled into view.
+   - It no longer calls `setConfig`.
+   - The toast says what happened: `Showing "<folder>" only`.
+3. **Scope toggles** (sidebar switch and toolbar button)
+   - Toggling flips the scope that is *in use* and clears the override. While the override is active, one click turns subfolders back on, which is what the label promises.
+   - These toggles still save the setting, as before. Only the context-menu action stops saving.
+4. **Verify**
+   - `npm run lint` and `npm run build` pass.
+   - Playwright on the demo workspace:
+     - With subfolders on, *Open Containing Folder* on a nested file opens its folder, shows *Current Folder Only*, and selects the file.
+     - `config.includeSubfolders` in `localStorage` stays `true`.
+     - After a reload, or after switching favorite, going up or using the breadcrumb, the scope is *Include Subfolders* again.
+     - While the override is active, the toolbar button and the sidebar switch each restore subfolders with one click, and that choice is saved.
+     - With subfolders off, the action opens the folder and the scope stays off.
+     - Export `config.json` after the action: `includeSubfolders` is unchanged.
+   - H1, H2, H3, M1 and M2 regressions pass. Light and dark screenshots.
+
+**Out of scope**:
+- A per-folder saved scope.
+- Other context-menu actions.
