@@ -18,7 +18,7 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | ID | Severity | Finding | Status | PR |
 |----|----------|---------|--------|----|
 | H1 | 🔴 High | Mounted local folders (and a local Default Folder) are never persisted; reload silently falls back to a demo folder | ✅ Merged | [#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) |
-| H2 | 🔴 High | Desktop build has no native filesystem layer: fake `Local\…` paths, no "Open file" action, `csp: null`, `core:default` only | 🟡 In progress | (PR pending) |
+| H2 | 🔴 High | Desktop build has no native filesystem layer: fake `Local\…` paths, no "Open file" action, `csp: null`, `core:default` only | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#3](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/3) |
 | H3 | 🔴 High | `config.json` export drops `sourceType`; re-imported local favorites become empty demo folders | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#2](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/2) |
 | M1 | 🟡 Medium | Native-picker folders get `dateModified: Date.now()`; skews recency filter and Recent sort | ⏳ | — |
 | M2 | 🟡 Medium | Scan cap (2,500) leaks; fallback picker has no cap or `node_modules`/`.git` skip; no grid virtualization | ⏳ | — |
@@ -173,10 +173,10 @@ Since H1, local favorites persist in `localStorage`, so they now always reach th
 | Stage | Status | Notes |
 |-------|--------|-------|
 | 📋 Document | ✅ | This section |
-| 🔀 PR | ⏳ | |
+| 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#3](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/3) |
 | 📝 Proposal | ✅ | See Proposal below |
-| 🔧 Implementation | ⏳ | |
-| ✅ Ready-to-close check | ⏳ | |
+| 🔧 Implementation | ✅ | See Implementation below |
+| ✅ Ready-to-close check | ✅ | Ready, pending the owner's merge and a manual Windows run |
 | 🏁 Closed | ⏳ | |
 
 ### Problem
@@ -234,3 +234,32 @@ The web build keeps working unchanged. Every native path is behind an `isNativeS
 
 **Out of scope**: bundling fonts for offline use, a file-system watcher or live refresh, grid virtualization (**M2**), and folder dates for the browser picker (**M1**; native scans get real dates here).
 
+### Implementation
+
+| Area | Files | What changed |
+|------|-------|--------------|
+| Allowlist | `src-tauri/src/roots.rs` | Roots the user picked are saved to `allowed_roots.json`. `resolve()` canonicalizes with `dunce` and refuses paths outside a root (`..`, symlink escapes and shared-prefix siblings included) |
+| Scan | `src-tauri/src/scan.rs` | Recursive walk: depth 8, 2,500 entries, skips `node_modules`/`.git`, never follows symlinks, hidden = dot-prefix, Windows hidden attribute or hidden parent; sets a `truncated` flag |
+| Commands | `src-tauri/src/lib.rs` | `pick_folder`, `scan_folder`, `read_text_snippet`, `read_file_bytes` (binary IPC response, size cap), `open_path`, `reveal_path`, `sync_folders`. Dialog and opener plugins are used from Rust only |
+| Security | `src-tauri/tauri.conf.json` | Strict CSP replaces `csp: null`. Capabilities stay `core:default` |
+| Bridge | `src/services/nativeBridge.ts` | `isNativeShell()` and typed `invoke` wrappers. UI never calls `invoke` directly |
+| Config | `src/types/foldary.ts`, `src/services/configStorage.ts` | Optional `nativePath` on favorites and entries. Exported, and kept on import only for local favorites |
+| App | `src/App.tsx` | Mount, "Choose folder again", restore and pin subfolder use native paths. Remove, import and reset call `sync_folders`. Truncated-scan toast. `Ctrl+Enter` opens |
+| UI | `PreviewPane.tsx`, `ContextMenu.tsx`, `SettingsModal.tsx` | Open / Show in Explorer (desktop only), previews through the bridge with object URLs revoked, shortcut listed |
+| Lockfile | `src-tauri/Cargo.lock` | Committed for reproducible builds |
+
+**Deviation from proposal:** `forget_folder(path)` became `sync_folders(keep)`. The frontend sends every path still in use, and the shell drops roots that none of them cover. This also handles config import and workspace reset, which a per-path call missed.
+
+### Ready-to-close check
+
+| Check | Result |
+|-------|--------|
+| `npm run lint` | ✅ |
+| `npm run build` | ✅ |
+| `cargo check` | ✅ |
+| `cargo test` (allowlist + scan) | ✅ 10/10 |
+| Playwright, stubbed Tauri (mount, preview, Open/Reveal, Ctrl+Enter, pin, restore, remove→sync, remount) | ✅ 23/23 |
+| Playwright web mode: no native actions shown | ✅ |
+| H1 / H3 regressions | ✅ 13/13 · 14/14 |
+| Light + dark screenshots | ✅ |
+| Real Windows desktop run | ⏳ Manual, needs the release workflow or a Windows machine |

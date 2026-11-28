@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Copy,
+  ExternalLink,
   FileArchive,
   Film,
   FolderOpen,
   Home,
   Image as ImageIcon,
   Music,
+  ScanSearch,
   Star,
   X,
 } from 'lucide-react';
@@ -18,6 +20,7 @@ import {
   isTextPreviewable,
   readLocalFileTextSnippet,
 } from '../services/fileProvider';
+import { readNativeFileBytes, readNativeTextSnippet } from '../services/nativeBridge';
 import { FileIcon } from './FileIcon';
 
 interface PreviewPaneProps {
@@ -28,7 +31,14 @@ interface PreviewPaneProps {
   onToggleFavoriteFolder: (entryPath: string, name: string, fullPath: string) => void;
   onSetFolderAsDefault: (entryPath: string, name: string, fullPath: string) => void;
   onCopyPath: (path: string) => void;
+  /** Desktop shell only: open with the default app / show in File Explorer */
+  onOpenNative: (entry: FileEntry) => void;
+  onRevealNative: (entry: FileEntry) => void;
 }
+
+const TEXT_SNIPPET_BYTES = 12_000;
+// Larger images are not loaded into the preview to keep memory bounded
+const MAX_NATIVE_IMAGE_BYTES = 25 * 1024 * 1024;
 
 export function PreviewPane({
   entry,
@@ -38,6 +48,8 @@ export function PreviewPane({
   onToggleFavoriteFolder,
   onSetFolderAsDefault,
   onCopyPath,
+  onOpenNative,
+  onRevealNative,
 }: PreviewPaneProps) {
   const [localObjectUrl, setLocalObjectUrl] = useState<string | null>(null);
   const [localTextPreview, setLocalTextPreview] = useState<string | null>(null);
@@ -47,23 +59,41 @@ export function PreviewPane({
     setImageError(false);
     setLocalTextPreview(null);
 
-    if (!entry?.localFile) {
+    const localFile = entry?.localFile;
+    const nativePath = entry?.nativePath;
+    if (!entry || entry.isFolder || (!localFile && !nativePath)) {
       setLocalObjectUrl(null);
       return;
     }
 
     let cancelled = false;
     let createdUrl: string | null = null;
+    setLocalObjectUrl(null);
 
     if (entry.category === 'picture') {
-      createdUrl = URL.createObjectURL(entry.localFile);
-      setLocalObjectUrl(createdUrl);
-    } else {
-      setLocalObjectUrl(null);
+      if (localFile) {
+        createdUrl = URL.createObjectURL(localFile);
+        setLocalObjectUrl(createdUrl);
+      } else if (nativePath && entry.size <= MAX_NATIVE_IMAGE_BYTES) {
+        readNativeFileBytes(nativePath, MAX_NATIVE_IMAGE_BYTES)
+          .then((bytes) => {
+            if (cancelled) return;
+            createdUrl = URL.createObjectURL(new Blob([bytes]));
+            setLocalObjectUrl(createdUrl);
+          })
+          .catch(() => {
+            if (!cancelled) setImageError(true);
+          });
+      }
     }
 
     if (isTextPreviewable(entry.extension)) {
-      readLocalFileTextSnippet(entry.localFile)
+      const snippet = localFile
+        ? readLocalFileTextSnippet(localFile, TEXT_SNIPPET_BYTES)
+        : readNativeTextSnippet(nativePath!, TEXT_SNIPPET_BYTES).then(({ text, truncated }) =>
+            truncated ? `${text}\n\n... (truncated preview)` : text
+          );
+      snippet
         .then((text) => {
           if (!cancelled) setLocalTextPreview(text);
         })
@@ -271,6 +301,29 @@ export function PreviewPane({
               </>
             )}
 
+            {entry.nativePath && !entry.isFolder && (
+              <button
+                type="button"
+                onClick={() => onOpenNative(entry)}
+                title="Open with the default app (Ctrl+Enter)"
+                className="h-8 px-3 rounded-md inline-flex items-center gap-1.5 text-xs font-medium bg-[#0067C0] hover:bg-[#005A9E] dark:bg-[#60CDFF] dark:hover:bg-[#4CC2FF] text-white dark:text-[#1A1A1A] transition-colors whitespace-nowrap"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Open</span>
+              </button>
+            )}
+
+            {entry.nativePath && (
+              <button
+                type="button"
+                onClick={() => onRevealNative(entry)}
+                className="h-8 px-2.5 rounded-md inline-flex items-center gap-1.5 text-xs font-medium bg-white dark:bg-[#2E2E2E] text-[#1A1A1A] dark:text-[#F3F3F3] border border-[#DFDFDF] dark:border-[#424242] hover:bg-[#F3F3F3] dark:hover:bg-[#383838] transition-colors whitespace-nowrap"
+              >
+                <ScanSearch className="w-3.5 h-3.5 text-[#5C5C5C] dark:text-[#A6A6A6]" />
+                <span>Show in Explorer</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => onCopyPath(entry.fullPath)}
@@ -310,7 +363,9 @@ export function PreviewPane({
             {entry.isHidden && (
               <div className="py-2 flex items-center justify-between gap-3">
                 <dt className="text-[#5C5C5C] dark:text-[#A6A6A6]">Visibility</dt>
-                <dd className="text-[#1A1A1A] dark:text-[#F3F3F3]">Hidden dotfile</dd>
+                <dd className="text-[#1A1A1A] dark:text-[#F3F3F3]">
+                  {entry.name.startsWith('.') ? 'Hidden dotfile' : 'Hidden'}
+                </dd>
               </div>
             )}
           </dl>

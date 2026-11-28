@@ -29,6 +29,7 @@ const SHORTCUTS: { keys: string; desc: string }[] = [
   { keys: 'Ctrl + K / Ctrl + Space', desc: 'Focus folder search input' },
   { keys: '↑ / ↓', desc: 'Move selection up or down in file grid' },
   { keys: 'Enter', desc: 'Open selected folder or open file preview' },
+  { keys: 'Ctrl + Enter', desc: 'Open selected file with its default app (desktop app)' },
   { keys: 'Backspace', desc: 'Navigate up to parent folder' },
   { keys: 'Space', desc: 'Toggle Quick Preview pane' },
   { keys: 'Alt + 1–9', desc: 'Switch directly to a pinned favorite folder' },

@@ -74,6 +74,7 @@ export function exportConfigJsonString(config: AppConfig): string {
       sourceType: fav.sourceType,
       ...(fav.baseDemoId ? { baseDemoId: fav.baseDemoId } : {}),
       ...(fav.subpath ? { subpath: fav.subpath } : {}),
+      ...(fav.nativePath ? { nativePath: fav.nativePath } : {}),
     })),
   };
   return JSON.stringify(cleanExport, null, 2);
@@ -142,6 +143,12 @@ export function validateAndNormalizeConfig(
       sourceType: resolveSourceType(f, f.id.trim()),
       baseDemoId: typeof f.baseDemoId === 'string' ? f.baseDemoId : undefined,
       subpath: typeof f.subpath === 'string' ? f.subpath : undefined,
+      // Only local favorites can point at a disk path; the shell still checks it against
+      // the folders the user picked, so an imported path grants no access by itself.
+      nativePath:
+        typeof f.nativePath === 'string' && f.nativePath.trim() && resolveSourceType(f, f.id.trim()) === 'local'
+          ? f.nativePath.trim()
+          : undefined,
     });
   }
 
