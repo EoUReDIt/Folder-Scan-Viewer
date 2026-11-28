@@ -168,7 +168,39 @@ export function formatFileSize(bytes: number, isFolder = false): string {
   return `${val >= 100 || i === 0 ? Math.round(val) : val.toFixed(1)} ${units[i]}`;
 }
 
+/** A `dateModified` of 0 means the source could not report a time. */
+export function isUnknownDate(timestamp: number): boolean {
+  return !timestamp;
+}
+
+/**
+ * Dates each folder by the newest item inside it. Folders are visited deepest-first, so a
+ * child folder is already rolled up when its parent reads it. Empty folders stay unknown (0).
+ */
+export function rollUpFolderDates(entries: FileEntry[]): void {
+  const folders = new Map<string, FileEntry>();
+  entries.forEach((e) => {
+    if (e.isFolder) folders.set(e.entryPath, e);
+  });
+  const newestChild = new Map<string, number>();
+  const depth = (p: string) => p.split('/').length;
+  const bump = (parentPath: string, ms: number) => {
+    if (!parentPath || !ms) return;
+    if (ms > (newestChild.get(parentPath) ?? 0)) newestChild.set(parentPath, ms);
+  };
+  entries.forEach((e) => {
+    if (!e.isFolder) bump(e.parentPath, e.dateModified);
+  });
+  [...folders.values()]
+    .sort((a, b) => depth(b.entryPath) - depth(a.entryPath))
+    .forEach((folder) => {
+      folder.dateModified = Math.max(folder.dateModified, newestChild.get(folder.entryPath) ?? 0);
+      bump(folder.parentPath, folder.dateModified);
+    });
+}
+
 export function formatRelativeTime(timestamp: number): string {
+  if (isUnknownDate(timestamp)) return '—';
   const diffMs = Date.now() - timestamp;
   if (diffMs < 60_000) return 'Just now';
   const mins = Math.floor(diffMs / 60_000);
@@ -187,6 +219,7 @@ export function formatRelativeTime(timestamp: number): string {
 }
 
 export function formatExactDate(timestamp: number): string {
+  if (isUnknownDate(timestamp)) return 'Unknown';
   return new Date(timestamp).toLocaleString(undefined, {
     year: 'numeric',
     month: 'short',
@@ -485,7 +518,7 @@ export function convertFileListToEntries(
     const parentPath = innerParts.slice(0, -1).join('/');
     const entryPath = innerParts.join('/');
     const ext = extractExtension(name);
-    const modified = file.lastModified || Date.now();
+    const modified = file.lastModified || 0;
     const isHidden = innerParts.some((seg) => seg.startsWith('.'));
 
     if (parentPath) {
@@ -576,7 +609,8 @@ export async function scanDirectoryHandle(
           parentPath,
           entryPath,
           fullPath: `${rootPath}\\${entryPath.split('/').join('\\')}`,
-          dateModified: Date.now(),
+          // The File System Access API has no folder timestamps; rolled up after the walk
+          dateModified: 0,
           size: 0,
           isHidden,
         });
@@ -595,7 +629,7 @@ export async function scanDirectoryHandle(
             parentPath,
             entryPath,
             fullPath: `${rootPath}\\${entryPath.split('/').join('\\')}`,
-            dateModified: file.lastModified || Date.now(),
+            dateModified: file.lastModified || 0,
             size: file.size,
             isHidden,
             localFile: file,
@@ -608,6 +642,7 @@ export async function scanDirectoryHandle(
   };
 
   await walk(dirHandle, '', 0);
+  rollUpFolderDates(entries);
   return { rootName, rootPath, entries };
 }
 
