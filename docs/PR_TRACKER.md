@@ -18,9 +18,9 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | ID | Severity | Finding | Status | PR |
 |----|----------|---------|--------|----|
 | H1 | 🔴 High | Mounted local folders (and a local Default Folder) are never persisted; reload silently falls back to a demo folder | ✅ Merged | [#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) |
-| H2 | 🔴 High | Desktop build has no native filesystem layer: fake `Local\…` paths, no "Open file" action, `csp: null`, `core:default` only | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#3](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/3) |
+| H2 | 🔴 High | Desktop build has no native filesystem layer: fake `Local\…` paths, no "Open file" action, `csp: null`, `core:default` only | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#3](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/3) |
 | H3 | 🔴 High | `config.json` export drops `sourceType`; re-imported local favorites become empty demo folders | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#2](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/2) |
-| M1 | 🟡 Medium | Native-picker folders get `dateModified: Date.now()`; skews recency filter and Recent sort | ⏳ | — |
+| M1 | 🟡 Medium | Native-picker folders get `dateModified: Date.now()`; skews recency filter and Recent sort | 🟡 In progress | (PR pending) |
 | M2 | 🟡 Medium | Scan cap (2,500) leaks; fallback picker has no cap or `node_modules`/`.git` skip; no grid virtualization | ⏳ | — |
 | M3 | 🟡 Medium | "Open Containing Folder" silently persists `includeSubfolders = false` | ⏳ | — |
 | M4 | 🟡 Medium | Hidden-file detection differs between native and fallback pickers | ⏳ | — |
@@ -177,7 +177,7 @@ Since H1, local favorites persist in `localStorage`, so they now always reach th
 | 📝 Proposal | ✅ | See Proposal below |
 | 🔧 Implementation | ✅ | See Implementation below |
 | ✅ Ready-to-close check | ✅ | Ready, pending the owner's merge and a manual Windows run |
-| 🏁 Closed | ⏳ | |
+| 🏁 Closed | ✅ | Merged 2026-11-28 (`18da9af`) |
 
 ### Problem
 
@@ -263,3 +263,54 @@ The web build keeps working unchanged. Every native path is behind an `isNativeS
 | H1 / H3 regressions | ✅ 13/13 · 14/14 |
 | Light + dark screenshots | ✅ |
 | Real Windows desktop run | ⏳ Manual, needs the release workflow or a Windows machine |
+
+## M1 — Browser-picker folders are always dated "now"
+
+| Stage | Status | Notes |
+|-------|--------|-------|
+| 📋 Document | ✅ | This section |
+| 🔀 PR | ⏳ | |
+| 📝 Proposal | ✅ | See Proposal below |
+| 🔧 Implementation | ⏳ | |
+| ✅ Ready-to-close check | ⏳ | |
+| 🏁 Closed | ⏳ | |
+
+### Problem
+
+`scanDirectoryHandle` (`src/services/fileProvider.ts`) is used both when you mount a folder with `showDirectoryPicker` and when you reconnect one on startup. It gives every folder `dateModified: Date.now()`, because the File System Access API exposes no folder timestamps. As a result:
+
+- Every folder shows "Just now" in the grid and the scan time in the preview.
+- Every folder passes every *Recently modified* filter (1, 7, 30 and 365 days), so "Last 1 day" is full of folders whose contents are years old.
+- Under *Recent* sort, all folders tie at the top, whatever their age.
+- The `<input webkitdirectory>` fallback already dates a folder by its newest file. The two pickers disagree for the same folder.
+
+A smaller version of the same problem: a native (Tauri) entry with no readable time falls back to `Date.now()` in `nativeBridge.ts`, and the file pickers do the same when `file.lastModified` is 0.
+
+### Proposal
+
+1. **Folder date = newest item inside** (`fileProvider.ts`, `scanDirectoryHandle`)
+   - Create folder entries with `dateModified: 0` (unknown).
+   - After the walk, roll dates up: visit folders deepest-first and set each to the newest `dateModified` of its direct children. Child folders have already been rolled up, so this covers all descendants.
+   - This matches what the fallback picker does today, so both pickers agree.
+2. **Unknown dates are not "now"**
+   - Use `0` for unknown in all three adapters:
+     - an empty folder in the browser picker
+     - a file with no `lastModified`
+     - a native entry with no readable time (`nativeBridge.ts`)
+   - `formatRelativeTime(0)` returns `—`, and `formatExactDate(0)` returns `Unknown`, in the grid and the preview.
+   - Recency filters already exclude `0`: it is older than any cutoff. That is correct, because nothing shows the item changed recently.
+   - *Recent* sort places unknown dates last (descending) or first (ascending), the same as the oldest items.
+3. **Verify**
+   - `npm run lint` and `npm run build` pass.
+   - Playwright with a mocked `showDirectoryPicker`. The tree has an old nested folder, a recent folder and an empty folder. Check:
+     - folder dates equal their newest descendant
+     - the empty folder shows `—` and is excluded from "Last 7 days"
+     - *Recent* sort puts the recent folder first
+     - reconnecting on startup gives the same dates
+   - The fallback picker gives the same folder dates as the native picker for the same tree.
+   - H1, H2 and H3 regression tests still pass.
+
+**Out of scope**:
+- Real folder timestamps in the browser. The API has none; the desktop shell already reports them (H2).
+- Scan caps and virtualization (**M2**).
+- Differences in how hidden files are detected (**M4**).
