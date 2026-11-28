@@ -38,7 +38,7 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | L10 | Low | Empty-state icons in the file list are `#6E6E6E` in dark mode, 2.93:1 on `#272727` (below 3:1, though decorative) | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#19](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/19) |
 | F1 | ✨ Feature | First launch always opens the demo folders; there is no step to choose a real project folder as the Default | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#20](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/20) |
 | F2 | ✨ Feature | No way to rename anything from inside the app | 🟡 Ready for review | [EoUReDIt/Folder-Scan-Viewer#21](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/21) |
-| F3 | ✨ Feature | No manual refresh: changes on disk only show after reconnecting or restarting | 🟡 Proposal | |
+| F3 | ✨ Feature | No manual refresh: changes on disk only show after reconnecting or restarting | 🟡 Proposal | [EoUReDIt/Folder-Scan-Viewer#22](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/22) |
 | F4 | ✨ Feature | Only one item can be selected at a time, and files can't be cut and pasted into another folder | ⏳ Not started | |
 
 ---
@@ -1479,7 +1479,7 @@ Found while testing: current Chromium has `move()` on files only, not on folders
 | Stage | Status | Notes |
 |-------|--------|-------|
 | 📋 Document | ✅ | This section |
-| 🔀 PR | 🟡 | Draft opened |
+| 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#22](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/22) |
 | 📝 Proposal | 🟡 | Below; waiting for agreement |
 | 🔧 Implementation | ⏳ | |
 | ✅ Ready-to-close check | ⏳ | |
