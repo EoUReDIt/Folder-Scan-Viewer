@@ -75,3 +75,16 @@ When adding a new file category (like `compressed`):
 - [ ] `config.json` export/import remains backwards-compatible with existing keys.
 - [ ] `npm run lint` passes with zero errors.
 - [ ] `npm run build` succeeds cleanly.
+- [ ] Final report follows the Coding Task Report format (see §7).
+
+## 7. Reporting Format for Agents
+
+Every agent (Claude Code, the main AI builder, or any other assistant) reports progress and results on coding tasks using the format in [`.claude/skills/coding-task-report/SKILL.md`](.claude/skills/coding-task-report/SKILL.md). Claude Code loads it automatically as the `coding-task-report` skill; other agents should read that file and follow it.
+
+In short:
+- Lead with a one-line status (`✅` done/pass, `❌` fail/blocked, `⏳` pending, `🟡` warning/partial, `🔴` critical).
+- Use tables for checks, commits, branches and PRs; keep small tasks to the minimal form.
+- Report only what was actually verified; say plainly when a step was skipped or failed.
+- Link PRs and issues as full markdown links with `owner/repo`, never a bare `#123`.
+
+This format applies to chat/status reports only. Commit messages, PR bodies and repository files follow the project's normal conventions.

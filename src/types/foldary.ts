@@ -94,3 +94,12 @@ export interface ToastMessage {
   text: string;
   tone?: 'info' | 'success' | 'error';
 }
+
+/**
+ * Runtime-only availability of a local favorite's contents (never persisted).
+ * - loading: checking the stored directory handle
+ * - ready: entries loaded
+ * - needs-permission: handle stored, browser needs a click to grant read access again
+ * - needs-remount: no handle (fallback picker or imported config); folder must be chosen again
+ */
+export type LocalFolderStatus = 'loading' | 'ready' | 'needs-permission' | 'needs-remount';

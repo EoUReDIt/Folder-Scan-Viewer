@@ -4,10 +4,12 @@ import {
   ArrowUp,
   CornerLeftUp,
   FolderOpen,
+  FolderSync,
+  Loader2,
   RotateCcw,
   SearchX,
 } from 'lucide-react';
-import { FileEntry, SortField, SortOrder } from '../types/foldary';
+import { FileEntry, LocalFolderStatus, SortField, SortOrder } from '../types/foldary';
 import {
   formatExactDate,
   formatFileSize,
@@ -29,6 +31,13 @@ interface FileGridProps {
   onContextMenuRow: (e: React.MouseEvent, entry: FileEntry) => void;
   onNavigateUp: () => void;
   onResetFilters: () => void;
+  /** Set when the active folder is a local folder whose contents are not loaded yet. */
+  unavailable?: {
+    status: Exclude<LocalFolderStatus, 'ready'>;
+    folderName: string;
+    onReconnect: () => void;
+    onChooseAgain: () => void;
+  } | null;
 }
 
 const COLUMNS: {
@@ -57,6 +66,7 @@ export function FileGrid({
   onContextMenuRow,
   onNavigateUp,
   onResetFilters,
+  unavailable,
 }: FileGridProps) {
   const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
 
@@ -86,7 +96,65 @@ export function FileGrid({
         </div>
       )}
 
-      {entries.length === 0 ? (
+      {unavailable ? (
+        <div className="h-full min-h-[280px] flex flex-col items-center justify-center px-6 py-12 text-center">
+          {unavailable.status === 'loading' ? (
+            <>
+              <Loader2
+                className="w-9 h-9 text-[#8E8E8E] dark:text-[#6E6E6E] mb-3 animate-spin"
+                strokeWidth={1.5}
+              />
+              <h3 className="text-sm font-semibold text-[#1A1A1A] dark:text-[#F3F3F3] mb-1">
+                Checking folder access…
+              </h3>
+              <p className="text-xs text-[#5C5C5C] dark:text-[#A6A6A6] max-w-sm">
+                Reopening “{unavailable.folderName}”.
+              </p>
+            </>
+          ) : (
+            <>
+              <FolderSync
+                className="w-9 h-9 text-[#8E8E8E] dark:text-[#6E6E6E] mb-3"
+                strokeWidth={1.5}
+              />
+              <h3 className="text-sm font-semibold text-[#1A1A1A] dark:text-[#F3F3F3] mb-1">
+                {unavailable.status === 'needs-permission'
+                  ? 'Allow access to this folder again'
+                  : 'Choose this folder again'}
+              </h3>
+              <p className="text-xs text-[#5C5C5C] dark:text-[#A6A6A6] max-w-sm mb-4">
+                {unavailable.status === 'needs-permission'
+                  ? `Your browser needs permission to read “${unavailable.folderName}” after a reload.`
+                  : `The browser can't reopen “${unavailable.folderName}” on its own. Pick the same folder to load its files; this favorite keeps its sort and Default settings.`}
+              </p>
+              <div className="flex items-center gap-2">
+                {unavailable.status === 'needs-permission' && (
+                  <button
+                    type="button"
+                    onClick={unavailable.onReconnect}
+                    className="h-8 px-3.5 rounded-md inline-flex items-center gap-1.5 text-xs font-medium bg-[#0067C0] hover:bg-[#005A9E] dark:bg-[#60CDFF] dark:hover:bg-[#4CC2FF] text-white dark:text-[#1A1A1A] transition-colors"
+                  >
+                    <FolderSync className="w-3.5 h-3.5" />
+                    <span>Reconnect folder</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={unavailable.onChooseAgain}
+                  className={
+                    unavailable.status === 'needs-permission'
+                      ? 'h-8 px-3.5 rounded-md inline-flex items-center gap-1.5 text-xs font-medium border border-[#E5E5E5] dark:border-[#383838] bg-white dark:bg-[#2C2C2C] hover:bg-[#F3F3F3] dark:hover:bg-[#333333] text-[#1A1A1A] dark:text-[#F3F3F3] transition-colors'
+                      : 'h-8 px-3.5 rounded-md inline-flex items-center gap-1.5 text-xs font-medium bg-[#0067C0] hover:bg-[#005A9E] dark:bg-[#60CDFF] dark:hover:bg-[#4CC2FF] text-white dark:text-[#1A1A1A] transition-colors'
+                  }
+                >
+                  <FolderOpen className="w-3.5 h-3.5" />
+                  <span>Choose folder again</span>
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      ) : entries.length === 0 ? (
         <div className="h-full min-h-[280px] flex flex-col items-center justify-center px-6 py-12 text-center">
           {hasActiveFilters ? (
             <>

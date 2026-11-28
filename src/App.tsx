@@ -5,6 +5,7 @@ import {
   FavoriteFolder,
   FileEntry,
   FilterType,
+  LocalFolderStatus,
   RecencyFilter,
   SortField,
   SortOrder,
@@ -20,9 +21,14 @@ import {
   computeCategoryCounts,
   convertFileListToEntries,
   filterAndSortEntries,
+  getHandlePermission,
+  LocalDirectoryHandle,
+  resolveSubdirectoryHandle,
+  scanDirectoryHandle,
   scopeEntriesToSubpath,
   tryPickDirectoryWithNativeApi,
 } from './services/fileProvider';
+import { clearHandles, deleteHandle, loadHandle, saveHandle } from './services/handleStore';
 import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
 import { SortToolbar } from './components/SortToolbar';
@@ -61,6 +67,14 @@ export default function App() {
     buildDemoWorkspace()
   );
   const [localFolders, setLocalFolders] = useState<Record<string, FileEntry[]>>({});
+  // Runtime-only availability of each local favorite (not persisted)
+  const [localStatus, setLocalStatus] = useState<Record<string, LocalFolderStatus>>({});
+  // Directory handles for local favorites mounted via the File System Access API
+  const handlesRef = useRef<Record<string, LocalDirectoryHandle>>({});
+  // Local favorites whose availability check has already started (guards StrictMode double effects)
+  const checkedLocalIdsRef = useRef<Set<string>>(new Set());
+  // Favorite id the <input webkitdirectory> fallback should refill instead of creating a new favorite
+  const remountTargetRef = useRef<string | null>(null);
 
   const [config, setConfig] = useState<AppConfig>(() => loadSavedConfig());
   const initialFolder = getInitialFolder(config);
@@ -84,6 +98,39 @@ export default function App() {
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
+
+  const setFolderStatus = useCallback((id: string, status: LocalFolderStatus) => {
+    setLocalStatus((prev) => ({ ...prev, [id]: status }));
+  }, []);
+
+  // Rescan a local favorite from its stored handle. `request` asks the browser for
+  // permission and must only be true inside a click handler.
+  const restoreLocalFolder = useCallback(
+    async (id: string, request: boolean): Promise<boolean> => {
+      const handle = handlesRef.current[id] ?? (await loadHandle(id));
+      if (!handle) {
+        setFolderStatus(id, 'needs-remount');
+        return false;
+      }
+      handlesRef.current[id] = handle;
+      const permission = await getHandlePermission(handle, { request });
+      if (permission !== 'granted') {
+        setFolderStatus(id, 'needs-permission');
+        return false;
+      }
+      try {
+        const { entries } = await scanDirectoryHandle(handle, id);
+        setLocalFolders((prev) => ({ ...prev, [id]: entries }));
+        setFolderStatus(id, 'ready');
+        return true;
+      } catch {
+        // Folder was moved or deleted since it was mounted
+        setFolderStatus(id, 'needs-remount');
+        return false;
+      }
+    },
+    [setFolderStatus]
+  );
 
   const notify = useCallback(
     (text: string, tone: ToastMessage['tone'] = 'info') => {
@@ -110,6 +157,18 @@ export default function App() {
   useEffect(() => {
     saveConfig(config);
   }, [config]);
+
+  // Restore local favorites that have no loaded contents yet (startup and config import).
+  // Favorites mounted in this session are registered as checked before they reach config.
+  useEffect(() => {
+    config.favorites.forEach((fav) => {
+      if (fav.sourceType !== 'local') return;
+      if (checkedLocalIdsRef.current.has(fav.id)) return;
+      checkedLocalIdsRef.current.add(fav.id);
+      setFolderStatus(fav.id, 'loading');
+      void restoreLocalFolder(fav.id, false);
+    });
+  }, [config.favorites, restoreLocalFolder, setFolderStatus]);
 
   const activeFolder = useMemo<FavoriteFolder>(() => {
     return (
@@ -342,6 +401,16 @@ export default function App() {
           }
         );
         setLocalFolders((prev) => ({ ...prev, [id]: scoped }));
+        setFolderStatus(id, 'ready');
+        checkedLocalIdsRef.current.add(id);
+        const rootHandle = handlesRef.current[activeFolder.id];
+        if (rootHandle) {
+          void resolveSubdirectoryHandle(rootHandle, entryPath).then((subHandle) => {
+            if (!subHandle) return;
+            handlesRef.current[id] = subHandle;
+            void saveHandle(id, subHandle);
+          });
+        }
         const newFav: FavoriteFolder = {
           id,
           name,
@@ -379,6 +448,7 @@ export default function App() {
       activeRootEntries,
       config.favorites,
       foldersFirst,
+      setFolderStatus,
       sortBy,
       sortOrder,
     ]
@@ -396,6 +466,22 @@ export default function App() {
         ...prev,
         favorites: prev.favorites.filter((f) => f.id !== folderId),
       }));
+      // Drop runtime data for local favorites so removed folders don't linger in memory or IndexedDB
+      setLocalFolders((prev) => {
+        if (!(folderId in prev)) return prev;
+        const next = { ...prev };
+        delete next[folderId];
+        return next;
+      });
+      setLocalStatus((prev) => {
+        if (!(folderId in prev)) return prev;
+        const next = { ...prev };
+        delete next[folderId];
+        return next;
+      });
+      delete handlesRef.current[folderId];
+      checkedLocalIdsRef.current.delete(folderId);
+      void deleteHandle(folderId);
 
       if (activeFolderId === folderId) {
         const fallback = config.favorites.find((f) => f.id !== folderId);
@@ -487,9 +573,20 @@ export default function App() {
 
   // Mount real local folder via File System Access API or fallback <input webkitdirectory>
   const mountEntriesAsLocalFavorite = useCallback(
-    (rootName: string, rootPath: string, entries: FileEntry[]) => {
-      const id = `local_${Date.now()}`;
+    (
+      id: string,
+      rootName: string,
+      rootPath: string,
+      entries: FileEntry[],
+      handle?: LocalDirectoryHandle
+    ) => {
       setLocalFolders((prev) => ({ ...prev, [id]: entries }));
+      setFolderStatus(id, 'ready');
+      checkedLocalIdsRef.current.add(id);
+      if (handle) {
+        handlesRef.current[id] = handle;
+        void saveHandle(id, handle);
+      }
 
       const newFav: FavoriteFolder = {
         id,
@@ -515,35 +612,93 @@ export default function App() {
         'success'
       );
     },
-    [config.globalSortBy, config.globalSortOrder, notify]
+    [config.globalSortBy, config.globalSortOrder, notify, setFolderStatus]
+  );
+
+  // Refill an existing local favorite (same id, sort and Default status) after a reload
+  const refillLocalFavorite = useCallback(
+    (id: string, entries: FileEntry[], handle?: LocalDirectoryHandle) => {
+      setLocalFolders((prev) => ({ ...prev, [id]: entries }));
+      setFolderStatus(id, 'ready');
+      if (handle) {
+        handlesRef.current[id] = handle;
+        void saveHandle(id, handle);
+      }
+      setCurrentSubpath('');
+      const name = config.favorites.find((f) => f.id === id)?.name ?? 'folder';
+      notify(
+        `Reconnected "${name}" (${entries.length} ${entries.length === 1 ? 'item' : 'items'})`,
+        'success'
+      );
+    },
+    [config.favorites, notify, setFolderStatus]
   );
 
   const handleAddLocalFolder = useCallback(async () => {
-    const idPrefix = `local_${Date.now()}`;
-    const result = await tryPickDirectoryWithNativeApi(idPrefix);
+    const id = `local_${Date.now()}`;
+    const result = await tryPickDirectoryWithNativeApi(id);
     if (result.status === 'picked') {
-      mountEntriesAsLocalFavorite(result.rootName, result.rootPath, result.entries);
+      mountEntriesAsLocalFavorite(
+        id,
+        result.rootName,
+        result.rootPath,
+        result.entries,
+        result.handle
+      );
       return;
     }
     if (result.status === 'cancelled') {
       return;
     }
     // Fallback to standard directory input (works reliably inside iframes and all browsers)
+    remountTargetRef.current = null;
     folderInputRef.current?.click();
   }, [mountEntriesAsLocalFavorite]);
+
+  const handleChooseLocalFolderAgain = useCallback(
+    async (id: string) => {
+      const result = await tryPickDirectoryWithNativeApi(id);
+      if (result.status === 'picked') {
+        refillLocalFavorite(id, result.entries, result.handle);
+        return;
+      }
+      if (result.status === 'cancelled') return;
+      remountTargetRef.current = id;
+      folderInputRef.current?.click();
+    },
+    [refillLocalFavorite]
+  );
+
+  const handleReconnectLocalFolder = useCallback(
+    async (id: string) => {
+      const ok = await restoreLocalFolder(id, true);
+      if (ok) {
+        setCurrentSubpath('');
+        notify('Folder access restored', 'success');
+      } else {
+        notify('Access was not granted. Try "Choose folder again".', 'info');
+      }
+    },
+    [notify, restoreLocalFolder]
+  );
 
   const handleFallbackFolderInput = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
+      const targetId = remountTargetRef.current;
+      remountTargetRef.current = null;
       if (!files || files.length === 0) return;
-      const { rootName, rootPath, entries } = convertFileListToEntries(
-        files,
-        `local_${Date.now()}`
-      );
-      mountEntriesAsLocalFavorite(rootName, rootPath, entries);
+      if (targetId && config.favorites.some((f) => f.id === targetId)) {
+        const { entries } = convertFileListToEntries(files, targetId);
+        refillLocalFavorite(targetId, entries);
+      } else {
+        const id = `local_${Date.now()}`;
+        const { rootName, rootPath, entries } = convertFileListToEntries(files, id);
+        mountEntriesAsLocalFavorite(id, rootName, rootPath, entries);
+      }
       e.target.value = '';
     },
-    [mountEntriesAsLocalFavorite]
+    [config.favorites, mountEntriesAsLocalFavorite, refillLocalFavorite]
   );
 
   const handleCopyText = useCallback(
@@ -567,6 +722,10 @@ export default function App() {
   const handleResetWorkspace = useCallback(() => {
     clearSavedConfig();
     setLocalFolders({});
+    setLocalStatus({});
+    handlesRef.current = {};
+    checkedLocalIdsRef.current = new Set();
+    void clearHandles();
     setConfig(DEFAULT_APP_CONFIG);
     const home = getInitialFolder(DEFAULT_APP_CONFIG);
     const startup = getStartupSort(DEFAULT_APP_CONFIG, home);
@@ -724,6 +883,18 @@ export default function App() {
     );
   }, [config.favorites, contextMenu]);
 
+  const activeLocalStatus: LocalFolderStatus =
+    activeFolder.sourceType === 'local' ? localStatus[activeFolder.id] ?? 'loading' : 'ready';
+  const activeFolderUnavailable =
+    activeLocalStatus === 'ready'
+      ? null
+      : {
+          status: activeLocalStatus,
+          folderName: activeFolder.name,
+          onReconnect: () => void handleReconnectLocalFolder(activeFolder.id),
+          onChooseAgain: () => void handleChooseLocalFolderAgain(activeFolder.id),
+        };
+
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-[#F3F3F3] dark:bg-[#202020] text-[#1A1A1A] dark:text-[#F3F3F3]">
       {/* Hidden fallback directory picker input for iframes & cross-browser local folder support */}
@@ -831,6 +1002,7 @@ export default function App() {
             }}
             onNavigateUp={handleNavigateUp}
             onResetFilters={handleResetFilters}
+            unavailable={activeFolderUnavailable}
           />
         </main>
 
