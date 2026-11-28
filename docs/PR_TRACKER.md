@@ -42,8 +42,8 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | 📋 Document | ✅ | This section |
 | 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) (draft) |
 | 📝 Proposal | ✅ | See Proposal below |
-| 🔧 Implementation | ⏳ | |
-| ✅ Ready-to-close check | ⏳ | |
+| 🔧 Implementation | ✅ | See Implementation below |
+| ✅ Ready-to-close check | ✅ | Passed; awaiting owner go-ahead to merge |
 | 🏁 Closed | ⏳ | |
 
 ### Problem
@@ -84,3 +84,27 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
    - Playwright check in Chromium: mount a folder through the fallback input, set it as Default, reload → app opens on that folder in the "Choose folder again" state, not a demo folder; demo folders still behave as before.
 
 **Out of scope** (tracked separately): native Tauri filesystem access (**H2**), `sourceType` in `config.json` export (**H3**).
+
+### Implementation
+
+| File | Change |
+|------|--------|
+| `src/services/configStorage.ts` | `saveConfig` persists all favorites; no longer rewrites `defaultFolderId` |
+| `src/services/handleStore.ts` (new) | IndexedDB store for directory handles (`foldary.handles`), fail-soft |
+| `src/services/fileProvider.ts` | `scanDirectoryHandle`, `getHandlePermission`, `resolveSubdirectoryHandle`; picker returns its handle |
+| `src/types/foldary.ts` | `LocalFolderStatus` runtime type |
+| `src/App.tsx` | Startup restore, handle save on mount/pin, refill-in-place, cleanup on remove (**L2**) and reset |
+| `src/components/FileGrid.tsx` | Loading / Reconnect / Choose-again state, light + dark |
+
+### Ready-to-close check
+
+| Check | Result |
+|-------|--------|
+| `npm run lint` | ✅ 0 errors |
+| `npm run build` | ✅ built |
+| Fallback picker: mount → set Default → reload → "Choose folder again" → refill same favorite | ✅ Playwright |
+| Native picker (OPFS handle): mount → set Default → reload → auto-restored, handle in IndexedDB | ✅ Playwright |
+| Imported local favorite with no handle → remount state; demo default unaffected | ✅ Playwright |
+| Light and dark screenshots of new state | ✅ checked |
+| `config.json` keys unchanged (backwards compatible) | ✅ |
+| "Reconnect folder" permission prompt (`needs-permission`) | 🟡 Not automatable headless (test handles are always granted); needs a manual check in Chrome/Edge |

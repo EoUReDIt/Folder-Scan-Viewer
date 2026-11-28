@@ -514,8 +514,12 @@ export function convertFileListToEntries(
 }
 
 interface DirectoryHandleLike {
+  kind?: 'directory';
   name: string;
   entries(): AsyncIterableIterator<[string, HandleLike]>;
+  getDirectoryHandle(name: string): Promise<DirectoryHandleLike>;
+  queryPermission?(descriptor: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
+  requestPermission?(descriptor: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
 }
 
 interface FileHandleLike {
@@ -531,13 +535,90 @@ interface SubDirectoryHandleLike extends DirectoryHandleLike {
 type HandleLike = FileHandleLike | SubDirectoryHandleLike;
 
 /**
+ * Opaque directory handle from the File System Access API. UI code only passes it around;
+ * all reads go through the helpers below so a Tauri/Electron adapter can replace them.
+ */
+export type LocalDirectoryHandle = DirectoryHandleLike;
+
+export interface ScannedDirectory {
+  rootName: string;
+  rootPath: string;
+  entries: FileEntry[];
+}
+
+/** Recursively reads a directory handle into FileEntry items. */
+export async function scanDirectoryHandle(
+  dirHandle: LocalDirectoryHandle,
+  folderIdPrefix: string
+): Promise<ScannedDirectory> {
+  const rootName = dirHandle.name || 'Local Folder';
+  const rootPath = `Local\\${rootName}`;
+  const entries: FileEntry[] = [];
+  let counter = 0;
+
+  const walk = async (handle: DirectoryHandleLike, parentPath: string, depth: number) => {
+    if (depth > 8 || entries.length > 2500) return;
+    for await (const [name, child] of handle.entries()) {
+      const entryPath = parentPath ? `${parentPath}/${name}` : name;
+      const relativePath = parentPath ? `.\\${parentPath.split('/').join('\\')}\\` : '.\\';
+      const isHidden = name.startsWith('.');
+
+      if (child.kind === 'directory') {
+        // Skip giant build folders in POC browser scans to stay snappy
+        if (name === 'node_modules' || name === '.git') continue;
+        entries.push({
+          id: `${folderIdPrefix}_dir_${counter++}_${entryPath}`,
+          name,
+          isFolder: true,
+          extension: '',
+          category: 'folder',
+          relativePath,
+          parentPath,
+          entryPath,
+          fullPath: `${rootPath}\\${entryPath.split('/').join('\\')}`,
+          dateModified: Date.now(),
+          size: 0,
+          isHidden,
+        });
+        await walk(child, entryPath, depth + 1);
+      } else {
+        try {
+          const file = await child.getFile();
+          const ext = extractExtension(name);
+          entries.push({
+            id: `${folderIdPrefix}_file_${counter++}_${entryPath}`,
+            name,
+            isFolder: false,
+            extension: ext,
+            category: categorizeExtension(ext),
+            relativePath,
+            parentPath,
+            entryPath,
+            fullPath: `${rootPath}\\${entryPath.split('/').join('\\')}`,
+            dateModified: file.lastModified || Date.now(),
+            size: file.size,
+            isHidden,
+            localFile: file,
+          });
+        } catch {
+          // Ignore unreadable OS-locked files
+        }
+      }
+    }
+  };
+
+  await walk(dirHandle, '', 0);
+  return { rootName, rootPath, entries };
+}
+
+/**
  * Attempts modern File System Access API (showDirectoryPicker).
- * Returns null if unavailable or blocked by iframe security so caller can trigger <input webkitdirectory>.
+ * Returns 'unsupported' if unavailable or blocked by iframe security so caller can trigger <input webkitdirectory>.
  */
 export async function tryPickDirectoryWithNativeApi(
   folderIdPrefix: string
 ): Promise<
-  | { status: 'picked'; rootName: string; rootPath: string; entries: FileEntry[] }
+  | ({ status: 'picked'; handle: LocalDirectoryHandle } & ScannedDirectory)
   | { status: 'cancelled' }
   | { status: 'unsupported' }
 > {
@@ -551,69 +632,50 @@ export async function tryPickDirectoryWithNativeApi(
 
   try {
     const dirHandle = await picker();
-    const rootName = dirHandle.name || 'Local Folder';
-    const rootPath = `Local\\${rootName}`;
-    const entries: FileEntry[] = [];
-    let counter = 0;
-
-    const walk = async (handle: DirectoryHandleLike, parentPath: string, depth: number) => {
-      if (depth > 8 || entries.length > 2500) return;
-      for await (const [name, child] of handle.entries()) {
-        const entryPath = parentPath ? `${parentPath}/${name}` : name;
-        const relativePath = parentPath ? `.\\${parentPath.split('/').join('\\')}\\` : '.\\';
-        const isHidden = name.startsWith('.');
-
-        if (child.kind === 'directory') {
-          // Skip giant build folders in POC browser scans to stay snappy
-          if (name === 'node_modules' || name === '.git') continue;
-          entries.push({
-            id: `${folderIdPrefix}_dir_${counter++}_${entryPath}`,
-            name,
-            isFolder: true,
-            extension: '',
-            category: 'folder',
-            relativePath,
-            parentPath,
-            entryPath,
-            fullPath: `${rootPath}\\${entryPath.split('/').join('\\')}`,
-            dateModified: Date.now(),
-            size: 0,
-            isHidden,
-          });
-          await walk(child, entryPath, depth + 1);
-        } else {
-          try {
-            const file = await child.getFile();
-            const ext = extractExtension(name);
-            entries.push({
-              id: `${folderIdPrefix}_file_${counter++}_${entryPath}`,
-              name,
-              isFolder: false,
-              extension: ext,
-              category: categorizeExtension(ext),
-              relativePath,
-              parentPath,
-              entryPath,
-              fullPath: `${rootPath}\\${entryPath.split('/').join('\\')}`,
-              dateModified: file.lastModified || Date.now(),
-              size: file.size,
-              isHidden,
-              localFile: file,
-            });
-          } catch {
-            // Ignore unreadable OS-locked files
-          }
-        }
-      }
-    };
-
-    await walk(dirHandle, '', 0);
-    return { status: 'picked', rootName, rootPath, entries };
+    const scanned = await scanDirectoryHandle(dirHandle, folderIdPrefix);
+    return { status: 'picked', handle: dirHandle, ...scanned };
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
       return { status: 'cancelled' };
     }
     return { status: 'unsupported' };
+  }
+}
+
+/**
+ * Checks (and optionally requests) read access to a stored handle.
+ * `request: true` must be called from a user gesture (click), otherwise browsers reject it.
+ */
+export async function getHandlePermission(
+  handle: LocalDirectoryHandle,
+  { request }: { request: boolean }
+): Promise<PermissionState> {
+  try {
+    const descriptor = { mode: 'read' as const };
+    if (typeof handle.queryPermission !== 'function') return 'granted';
+    const current = await handle.queryPermission(descriptor);
+    if (current === 'granted' || !request || typeof handle.requestPermission !== 'function') {
+      return current;
+    }
+    return await handle.requestPermission(descriptor);
+  } catch {
+    return 'denied';
+  }
+}
+
+/** Walks from a root handle to a nested subfolder ("a/b/c"). Returns null if any segment is missing. */
+export async function resolveSubdirectoryHandle(
+  root: LocalDirectoryHandle,
+  subpath: string
+): Promise<LocalDirectoryHandle | null> {
+  try {
+    let current = root;
+    for (const segment of subpath.split('/').filter(Boolean)) {
+      current = await current.getDirectoryHandle(segment);
+    }
+    return current;
+  } catch {
+    return null;
   }
 }
 

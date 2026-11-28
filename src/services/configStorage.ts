@@ -27,19 +27,9 @@ export function loadSavedConfig(): AppConfig {
 
 export function saveConfig(config: AppConfig): void {
   try {
-    // Only persist serializable metadata (demo favorites remain immediately functional across reloads;
-    // local browser directory handles cannot survive reload in web sandbox, so mark/keep demo favorites cleanly)
-    const persistable: AppConfig = {
-      ...config,
-      favorites: config.favorites.filter((f) => f.sourceType === 'demo'),
-    };
-    const defaultExists = persistable.favorites.some(
-      (f) => f.id === persistable.defaultFolderId
-    );
-    if (!defaultExists && persistable.favorites.length > 0) {
-      persistable.defaultFolderId = persistable.favorites[0].id;
-    }
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(persistable));
+    // Persist every favorite, including local ones. Local file contents are never stored here:
+    // directory handles live in IndexedDB (see handleStore.ts) and are rescanned on startup.
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
   } catch {
     // Ignore storage quota errors in private browsing
   }
