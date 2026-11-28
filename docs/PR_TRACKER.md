@@ -28,8 +28,8 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | M6 | 🟡 Medium | Grid keyboard scroll-sync: rapid ↓/↑ on a 2,500-row folder sometimes drops a key and throws React error #185 (update depth exceeded). Present since M2; seen in 2–3 of 8 runs of the M2 test, old and new code alike | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#9](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/9) |
 | L1 | Low | Unused AI Studio leftovers (`@google/genai`, `express`, `dotenv`, `motion`, `tsx`, Gemini `.env.example`, `metadata.json`); build tools in `dependencies` | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#10](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/10) |
 | L2 | Low | Removing a local favorite leaks its `localFolders` entry | ✅ Merged | [#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) (folded into H1) |
-| L3 | Low | Accessibility: rows not focusable, context menu lacks focus/arrow keys, settings modal lacks focus trap | ✅ Ready to close | [#11](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/11) |
-| L4 | Low | `App.tsx` (879 lines) mixes favorites, mounting and shortcuts; extract hooks | ⏳ | — |
+| L3 | Low | Accessibility: rows not focusable, context menu lacks focus/arrow keys, settings modal lacks focus trap | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#11](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/11) |
+| L4 | Low | `App.tsx` (879 lines at review, 1,235 now) mixes favorites, mounting and shortcuts; extract hooks | 🟡 In progress | (PR pending) |
 | L5 | Low | No tests; no CI on push/PR; version-bump commit is pushed before the installer build succeeds | ⏳ | — |
 | L6 | Low | `bump-version.mjs` doesn't update `package-lock.json` (fixed manually in `e918ec6`) | ⏳ | — |
 | L7 | Low | Preview pane dark background `#222222` drifts from documented tokens | ⏳ | — |
@@ -810,7 +810,7 @@ Effect: a slower `npm install` with about a dozen unused packages, a misleading 
 | 📝 Proposal | ✅ | See Proposal below |
 | 🔧 Implementation | ✅ | See Implementation below |
 | ✅ Ready-to-close check | ✅ | See Ready to close below |
-| 🏁 Closed | ⏳ | |
+| 🏁 Closed | ✅ | Merged 2026-11-28 (`300bce3`) |
 
 ### Problem
 
@@ -869,3 +869,66 @@ Effect: a slower `npm install` with about a dozen unused packages, a misleading 
 
 - The Favorites dropdown and other TopBar controls. They are already native buttons; a full menu pattern for the dropdown can follow separately if needed.
 - A roving `tabIndex` across individual cells. The app's model is row selection, not cell navigation.
+
+---
+
+## L4 — Split `App.tsx` into hooks
+
+| Stage | Status | Notes |
+|-------|--------|-------|
+| 📋 Document | ✅ | This section |
+| 🔀 PR | ⏳ | |
+| 📝 Proposal | ✅ | See Proposal below |
+| 🔧 Implementation | ⏳ | |
+| ✅ Ready-to-close check | ⏳ | |
+| 🏁 Closed | ⏳ | |
+
+### Problem
+
+`src/App.tsx` was 879 lines at review and is 1,235 lines after H1–L3. One component holds every concern:
+
+| Concern | Where in `App.tsx` today |
+|---------|--------------------------|
+| Toasts | `toasts` state and `notify` |
+| Config persistence and theme | `config` state, the save effect and the `dark` class effect |
+| Local-folder runtime store | `localFolders`, `localStatus`, `handlesRef`, `checkedLocalIdsRef`, `restoreLocalFolder`, the startup restore effect, and hand-written clean-up in three places (remove, import, reset) |
+| Mounting flows | Add folder, Choose again, Reconnect, the `<input webkitdirectory>` fallback, `mountEntriesAsLocalFavorite`, `refillLocalFavorite` |
+| Favorites | Pin subfolder, remove, toggle, set Default, current-location status |
+| Navigation and sort | `activeFolderId`, `currentSubpath` and the three sort fields. "Go to this folder with its startup sort" is written out five times (select, mount, reset, import, and remove-active fallback), so a change to startup sort must be made in every copy |
+| Keyboard shortcuts | One 120-line `useEffect` with a 12-item dependency list |
+
+This makes changes risky (the H1, M3 and L3 fixes all had to touch several of these at once) and makes it hard to unit-test anything without rendering the whole app (L5).
+
+### Proposal
+
+A behaviour-preserving refactor. No UI, `config.json` or storage changes.
+
+1. **Pure helpers out of the component**
+   - `getInitialFolder` and `getStartupSort` move to `src/services/startup.ts`.
+   - `syncNativeAccess(favorites)` moves next to `syncNativeFolders` in `src/services/nativeBridge.ts`, keeping all Tauri calls in `src/services/` as AGENTS.md §3 requires.
+2. **New hooks in `src/hooks/`**
+
+   | Hook | Owns |
+   |------|------|
+   | `useToasts` | `toasts`, `notify` |
+   | `useAppConfig` | `config` and `setConfig`, saving to `localStorage`, the `dark` class |
+   | `useFolderNavigation` | `activeFolderId`, `currentSubpath`, `sortBy`/`sortOrder`/`foldersFirst`, and one `goToFolder(folder, config)` that replaces the five copies |
+   | `useLocalFolders` | The runtime store (entries, status, handles), `restoreLocalFolder`, the startup restore effect, and `register` / `forget(ids)` / `forgetAll` helpers that replace the hand-written clean-up |
+   | `useFolderMounting` | Add, Choose again, Reconnect and the fallback `<input>` (`folderInputRef`, `handleFallbackFolderInput`) |
+   | `useFavorites` | Pin, remove, toggle, set Default, current-location status |
+   | `useKeyboardShortcuts` | The global keydown listener. It takes one options object and keeps the L3 rule that it is suspended while the menu or settings is open |
+
+   Each hook gets what it needs as arguments (`config`, `setConfig`, `notify`, navigation callbacks). None reaches into another hook's state directly.
+3. **`App.tsx` keeps** the view state (search, filters, selection, preview, settings, context menu, M3 scope override), the derived lists (`visibleEntries`, counts), and the JSX. Target: under 450 lines.
+4. **Docs**
+   - AGENTS.md §3 lists `src/hooks/` and its boundary: hooks may call `src/services/`, and components never do.
+5. **Verify**
+   - Lint and build pass.
+   - All browser tests pass unchanged: L1, H1, H2, H3, M1–M6 and L3. They exercise mounting, remount, import/export, favorites, scope override, search, the virtualized grid and every shortcut.
+   - Bundle size stays about the same.
+
+### Out of scope
+
+- Splitting `SettingsModal.tsx` or `FileGrid.tsx`.
+- State libraries (Redux, Zustand) or context providers. Plain hooks are enough at this size.
+- Unit tests for the new hooks. These belong to L5, which this refactor makes possible.
