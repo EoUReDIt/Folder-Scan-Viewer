@@ -38,7 +38,7 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | L10 | Low | Empty-state icons in the file list are `#6E6E6E` in dark mode, 2.93:1 on `#272727` (below 3:1, though decorative) | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#19](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/19) |
 | F1 | ✨ Feature | First launch always opens the demo folders; there is no step to choose a real project folder as the Default | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#20](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/20) |
 | F2 | ✨ Feature | No way to rename anything from inside the app | 🟡 Ready for review | [EoUReDIt/Folder-Scan-Viewer#21](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/21) |
-| F3 | ✨ Feature | No manual refresh: changes on disk only show after reconnecting or restarting | ⏳ Not started | |
+| F3 | ✨ Feature | No manual refresh: changes on disk only show after reconnecting or restarting | 🟡 Proposal | |
 | F4 | ✨ Feature | Only one item can be selected at a time, and files can't be cut and pasted into another folder | ⏳ Not started | |
 
 ---
@@ -1479,8 +1479,8 @@ Found while testing: current Chromium has `move()` on files only, not on folders
 | Stage | Status | Notes |
 |-------|--------|-------|
 | 📋 Document | ✅ | This section |
-| 🔀 PR | ⏳ | Starts after F2 merges |
-| 📝 Proposal | ⏳ | |
+| 🔀 PR | 🟡 | Draft opened |
+| 📝 Proposal | 🟡 | Below; waiting for agreement |
 | 🔧 Implementation | ⏳ | |
 | ✅ Ready-to-close check | ⏳ | |
 | 🏁 Closed | ⏳ | |
@@ -1488,6 +1488,37 @@ Found while testing: current Chromium has `move()` on files only, not on folders
 ### Problem
 
 User request: "a manual refresh button". A local folder is scanned once, when it is mounted or reconnected. Files added, removed or changed on disk afterwards don't appear until the folder is reconnected or the app restarts, and there is no button to rescan it.
+
+### Proposal
+
+**Button and shortcut**
+
+- A **Refresh** button (circular-arrow icon) in the top bar, left of the Quick Preview button. Tooltip `Refresh (F5)`.
+- **F5** does the same. It is ignored while typing in a field or while a dialog is open. In the browser it replaces the page reload; that loses nothing, because the app restores its state on reload anyway.
+- While the scan runs, the icon spins, the button is disabled and has `aria-busy`. A second press does nothing until the scan finishes.
+- The demo has no button. Demo files never change, and a button that does nothing would be a dead button.
+
+**What it rescans**
+
+- The open pinned folder, from disk, with the same scanner as startup:
+  - desktop: the `scan_folder` command
+  - Chrome / Edge: the stored folder handle
+- Any other pinned folder that overlaps it, so they don't disagree: a pinned folder inside the open one, or the folder the open one sits inside.
+- A folder opened with the fallback picker is a read-only copy with no handle, so it can't be rescanned. There, **Refresh** opens the folder picker for the same folder (the existing **Choose again**) and the tooltip says so.
+
+**What stays the same after a refresh**
+
+- The current subfolder, search, filters, sort and scope.
+- The selected row, if the item still exists. If it was removed, nothing is selected and the preview closes.
+- If the open subfolder itself was removed, Foldary goes to the nearest folder above it that still exists, and a toast says so.
+- The grid doesn't flash empty: the old list stays until the new one arrives.
+
+**Feedback**
+
+- Success: toast `Refreshed "Projects"`. When something changed, it adds the change, e.g. `· 3 added, 1 removed`.
+- Folder moved or deleted, or access lost: the existing **Reconnect** / **Choose again** screen, as at startup. In the browser, the click can ask for access again directly.
+
+**Out of scope**: watching the disk for changes automatically; refreshing on a timer; refreshing every pinned folder at once.
 
 ---
 
