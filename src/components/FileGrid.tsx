@@ -79,6 +79,8 @@ export function FileGrid({
   const theadRef = useRef<HTMLTableSectionElement | null>(null);
   const tbodyRef = useRef<HTMLTableSectionElement | null>(null);
   const [view, setView] = useState({ scrollTop: 0, height: 0, tbodyTop: 0 });
+  // Last measured view, so scroll events that change nothing schedule no React update
+  const viewRef = useRef(view);
 
   // Where the first body row sits inside the scrolled content (below the Up bar and header)
   const measureTbodyTop = useCallback(() => {
@@ -100,13 +102,16 @@ export function FileGrid({
       height: container.clientHeight,
       tbodyTop: measureTbodyTop(),
     };
-    setView((prev) =>
+    const prev = viewRef.current;
+    if (
       prev.scrollTop === next.scrollTop &&
       prev.height === next.height &&
       prev.tbodyTop === next.tbodyTop
-        ? prev
-        : next
-    );
+    ) {
+      return;
+    }
+    viewRef.current = next;
+    setView(next);
   }, [measureTbodyTop]);
 
   const hasRows = !unavailable && entries.length > 0;
@@ -125,7 +130,10 @@ export function FileGrid({
 
   // Keep the selected row in view, clear of the sticky header. Works by index, so it also
   // reaches rows that are not rendered while the list is virtualized.
-  useEffect(() => {
+  // A layout effect that re-syncs the window in the same commit: if the update waited for the
+  // scroll event instead, fast key repeat would leave it pending between keypress commits until
+  // React aborts with "Maximum update depth exceeded" (M6).
+  useLayoutEffect(() => {
     if (!selectedId) return;
     const container = containerRef.current;
     if (!container) return;
@@ -139,6 +147,7 @@ export function FileGrid({
     } else if (rowBottom > container.scrollTop + container.clientHeight) {
       container.scrollTop = rowBottom - container.clientHeight;
     }
+    syncView();
     // Follow selection and folder changes, not every re-sort or filter keystroke
   }, [selectedId, currentSubpath]);
 
