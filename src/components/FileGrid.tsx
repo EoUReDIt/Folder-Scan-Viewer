@@ -215,7 +215,7 @@ export function FileGrid({
           {unavailable.status === 'loading' ? (
             <>
               <Loader2
-                className="w-9 h-9 text-[#8E8E8E] dark:text-[#6E6E6E] mb-3 animate-spin"
+                className="w-9 h-9 text-[#8E8E8E] dark:text-[#8E8E8E] mb-3 animate-spin"
                 strokeWidth={1.5}
               />
               <h3 className="text-sm font-semibold text-[#1A1A1A] dark:text-[#F3F3F3] mb-1">
@@ -228,7 +228,7 @@ export function FileGrid({
           ) : (
             <>
               <FolderSync
-                className="w-9 h-9 text-[#8E8E8E] dark:text-[#6E6E6E] mb-3"
+                className="w-9 h-9 text-[#8E8E8E] dark:text-[#8E8E8E] mb-3"
                 strokeWidth={1.5}
               />
               <h3 className="text-sm font-semibold text-[#1A1A1A] dark:text-[#F3F3F3] mb-1">
@@ -272,7 +272,7 @@ export function FileGrid({
         <div className="h-full min-h-[280px] flex flex-col items-center justify-center px-6 py-12 text-center">
           {hasActiveFilters ? (
             <>
-              <SearchX className="w-9 h-9 text-[#8E8E8E] dark:text-[#6E6E6E] mb-3" strokeWidth={1.5} />
+              <SearchX className="w-9 h-9 text-[#8E8E8E] dark:text-[#8E8E8E] mb-3" strokeWidth={1.5} />
               <h3 className="text-sm font-semibold text-[#1A1A1A] dark:text-[#F3F3F3] mb-1">
                 No matching files found
               </h3>
@@ -290,7 +290,7 @@ export function FileGrid({
             </>
           ) : (
             <>
-              <FolderOpen className="w-9 h-9 text-[#8E8E8E] dark:text-[#6E6E6E] mb-3" strokeWidth={1.5} />
+              <FolderOpen className="w-9 h-9 text-[#8E8E8E] dark:text-[#8E8E8E] mb-3" strokeWidth={1.5} />
               <h3 className="text-sm font-semibold text-[#1A1A1A] dark:text-[#F3F3F3] mb-1">
                 This folder is empty
               </h3>

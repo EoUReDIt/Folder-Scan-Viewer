@@ -35,6 +35,7 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | L7 | Low | Preview pane dark background `#222222` drifts from documented tokens | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#15](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/15) |
 | L8 | Low | Sort toolbar dark background is the canvas `#272727`, not the documented toolbar `#2C2C2C`; its "Saved per folder" hint is below AA contrast | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#16](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/16) |
 | L9 | Low | Secondary greys `#767676` / `#8E8E8E` fall below AA contrast on several backgrounds (search box, Backspace hint, sidebar counts, settings paths) | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#17](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/17) |
+| L10 | Low | Empty-state icons in the file list are `#6E6E6E` in dark mode, 2.93:1 on `#272727` (below 3:1, though decorative) | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#19](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/19) |
 
 ---
 
@@ -1272,4 +1273,54 @@ After this change `#767676` is used only for the toggle-switch border, which nee
 ### Out of scope
 
 - The decorative empty-state icons in `FileGrid.tsx` (`#8E8E8E` / `#6E6E6E`) were not checked; they carry no information that the text beside them doesn't.
+
+---
+
+## L10 — Dark empty-state icons reach 3:1
+
+| Stage | Status | Notes |
+|-------|--------|-------|
+| 📋 Document | ✅ | This section |
+| 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#19](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/19) |
+| 📝 Proposal | ✅ | Below (option B) |
+| 🔧 Implementation | ✅ | 4 class changes in `FileGrid.tsx` |
+| ✅ Ready-to-close check | ✅ | All checks pass; see below |
+| 🏁 Closed | ⏳ | |
+
+### Problem
+
+Found after L9. The large icons on the file list's empty and status screens (`src/components/FileGrid.tsx`) are `#8E8E8E` in light mode and `#6E6E6E` in dark mode, on the canvas `#FFFFFF` / `#272727`:
+
+| Icon | Shown when | Light | Dark |
+|------|-----------|-------|------|
+| `Loader2` (line 218) | "Checking folder access…" | 3.28:1 | 2.93:1 🟡 |
+| `FolderSync` (line 231) | Reconnect / choose folder again | 3.28:1 | 2.93:1 🟡 |
+| `SearchX` (line 275) | "No matching files found" | 3.28:1 | 2.93:1 🟡 |
+| `FolderOpen` (line 293) | "This folder is empty" | 3.28:1 | 2.93:1 🟡 |
+
+These are not a WCAG failure: each icon repeats the heading under it, and `lucide-react` renders them with `aria-hidden="true"`, so the 3:1 non-text rule doesn't apply. In dark mode they still look fainter than the light-mode version, and fainter than the rest of the UI after L9.
+
+### Proposal
+
+Option B: change the dark icon colour from `#6E6E6E` to `#8E8E8E` (4.56:1 on `#272727`), the same weight as light mode. It stays lighter than the `#A6A6A6` description text, so the icon still sits behind the heading. Light mode is unchanged. (Option A, leaving the icons as they are, was declined.)
+
+### Implementation
+
+| Change | File |
+|--------|------|
+| `dark:text-[#6E6E6E]` → `dark:text-[#8E8E8E]` on the `Loader2`, `FolderSync`, `SearchX` and `FolderOpen` empty-state icons (lines 218, 231, 275, 293) | `src/components/FileGrid.tsx` |
+
+`#6E6E6E` is no longer used anywhere in `src/`.
+
+### Ready to close
+
+| Check | Result |
+|-------|--------|
+| `npm run lint` | ✅ 0 errors |
+| `npm test` | ✅ 38 tests |
+| `npm run build` | ✅ JS bundle unchanged at 331.9 kB |
+| Rendered colour (production build, "No matching files found" screen) | ✅ Dark: icon `rgb(142,142,142)` on `rgb(39,39,39)`, 4.56:1. Light: unchanged at 3.28:1 |
+| Screenshot, dark | ✅ The icon now reads at the same weight as in light mode and stays lighter than the description text |
+| Browser regression suite (production build) | ✅ L1 6, H1 13, H2 23, H3 14, M1 18, M2 24, M3 22, M4 16, M5 17, M6 7, L3 37, web-mode check. All unchanged, 0 failures |
+| `cargo test` | ➖ Not run; no Rust changes |
 
