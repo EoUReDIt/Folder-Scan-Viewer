@@ -696,7 +696,11 @@ interface DirectoryHandleLike {
   kind?: 'directory';
   name: string;
   entries(): AsyncIterableIterator<[string, HandleLike]>;
-  getDirectoryHandle(name: string): Promise<DirectoryHandleLike>;
+  getDirectoryHandle(name: string, options?: { create?: boolean }): Promise<DirectoryHandleLike>;
+  getFileHandle?(name: string, options?: { create?: boolean }): Promise<FileHandleLike>;
+  removeEntry?(name: string, options?: { recursive?: boolean }): Promise<void>;
+  /** Chromium: renames the item in place (not in every browser or version). */
+  move?(newName: string): Promise<void>;
   queryPermission?(descriptor: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
   requestPermission?(descriptor: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
 }
@@ -705,6 +709,8 @@ interface FileHandleLike {
   kind: 'file';
   name: string;
   getFile(): Promise<File>;
+  move?(newName: string): Promise<void>;
+  createWritable?(): Promise<{ write(data: Blob): Promise<void>; close(): Promise<void> }>;
 }
 
 interface SubDirectoryHandleLike extends DirectoryHandleLike {
@@ -718,6 +724,7 @@ type HandleLike = FileHandleLike | SubDirectoryHandleLike;
  * all reads go through the helpers below so a Tauri/Electron adapter can replace them.
  */
 export type LocalDirectoryHandle = DirectoryHandleLike;
+export type LocalFileHandle = FileHandleLike;
 
 export interface ScannedDirectory {
   rootName: string;
@@ -831,15 +838,16 @@ export async function tryPickDirectoryWithNativeApi(
 }
 
 /**
- * Checks (and optionally requests) read access to a stored handle.
+ * Checks (and optionally requests) access to a stored handle: read by default, or
+ * `readwrite` for changes such as renaming.
  * `request: true` must be called from a user gesture (click), otherwise browsers reject it.
  */
 export async function getHandlePermission(
   handle: LocalDirectoryHandle,
-  { request }: { request: boolean }
+  { request, mode = 'read' }: { request: boolean; mode?: 'read' | 'readwrite' }
 ): Promise<PermissionState> {
   try {
-    const descriptor = { mode: 'read' as const };
+    const descriptor = { mode };
     if (typeof handle.queryPermission !== 'function') return 'granted';
     const current = await handle.queryPermission(descriptor);
     if (current === 'granted' || !request || typeof handle.requestPermission !== 'function') {

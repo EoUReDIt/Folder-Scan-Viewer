@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AppConfig,
   ContextMenuState,
+  FavoriteFolder,
   FileEntry,
   FilterType,
   LocalFolderStatus,
@@ -16,6 +17,13 @@ import {
 } from './services/fileProvider';
 import { syncNativeAccess } from './services/nativeBridge';
 import { getInitialFolder } from './services/startup';
+import {
+  editableNameRange,
+  MAX_ENTRY_NAME,
+  MAX_FAVORITE_NAME,
+  validateEntryName,
+  validateFavoriteName,
+} from './services/rename';
 import { useToasts } from './hooks/useToasts';
 import { useAppConfig } from './hooks/useAppConfig';
 import { useFolderNavigation } from './hooks/useFolderNavigation';
@@ -24,6 +32,7 @@ import { useFolderMounting } from './hooks/useFolderMounting';
 import { useFavorites } from './hooks/useFavorites';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useFileActions } from './hooks/useFileActions';
+import { useRename } from './hooks/useRename';
 import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
 import { SortToolbar } from './components/SortToolbar';
@@ -33,6 +42,7 @@ import { ContextMenu } from './components/ContextMenu';
 import { SettingsModal } from './components/SettingsModal';
 import { ToastContainer } from './components/ToastContainer';
 import { WelcomeScreen } from './components/WelcomeScreen';
+import { RenameDialog } from './components/RenameDialog';
 import { NATIVE_SHELL } from './hooks/useLocalFolders';
 
 export default function App() {
@@ -58,6 +68,11 @@ export default function App() {
   const [previewOpen, setPreviewOpen] = useState<boolean>(true);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [renameTarget, setRenameTarget] = useState<
+    { kind: 'entry'; entry: FileEntry } | { kind: 'favorite'; favorite: FavoriteFolder } | null
+  >(null);
+  // Entry path to select once a renamed item shows up in the rescanned list
+  const [pendingSelectPath, setPendingSelectPath] = useState<string | null>(null);
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -81,6 +96,20 @@ export default function App() {
     setConfig,
     navigation,
     activeRootEntries,
+    local,
+    notify,
+  });
+
+  const activeLocalStatus: LocalFolderStatus =
+    activeFolder.sourceType === 'local'
+      ? local.localStatus[activeFolder.id] ?? 'loading'
+      : 'ready';
+  const rename = useRename({
+    config,
+    setConfig,
+    navigation,
+    activeRootEntries,
+    activeLocalStatus,
     local,
     notify,
   });
@@ -154,6 +183,16 @@ export default function App() {
       setSelectedId(visibleEntries[0].id);
     }
   }, [visibleEntries, selectedId]);
+
+  // Select a renamed item once it appears under its new name
+  useEffect(() => {
+    if (!pendingSelectPath) return;
+    const match = visibleEntries.find((e) => e.entryPath === pendingSelectPath);
+    if (match) {
+      setSelectedId(match.id);
+      setPendingSelectPath(null);
+    }
+  }, [pendingSelectPath, visibleEntries]);
 
   // Typing a query selects the best match, so Enter opens it
   const lastQueryRef = useRef(searchQuery);
@@ -238,10 +277,32 @@ export default function App() {
     [handleOpenFolderHere]
   );
 
+  const { renameBlockedReason } = rename;
+  const handleRenameEntry = useCallback(
+    (entry: FileEntry) => {
+      const blocked = renameBlockedReason();
+      if (blocked) {
+        notify(blocked, 'info');
+        return;
+      }
+      setContextMenu(null);
+      setRenameTarget({ kind: 'entry', entry });
+    },
+    [notify, renameBlockedReason]
+  );
+  const handleRenameFavorite = useCallback(
+    (folderId: string) => {
+      const favorite = config.favorites.find((f) => f.id === folderId);
+      if (favorite) setRenameTarget({ kind: 'favorite', favorite });
+    },
+    [config.favorites]
+  );
+  const canRenameEntries = renameBlockedReason() === null;
+
   const clearSearch = useCallback(() => setSearchQuery(''), []);
   const togglePreview = useCallback(() => setPreviewOpen((prev) => !prev), []);
   useKeyboardShortcuts({
-    enabled: config.onboarded && !settingsOpen && !contextMenu,
+    enabled: config.onboarded && !settingsOpen && !contextMenu && !renameTarget,
     searchInputRef,
     favorites: config.favorites,
     searchQuery,
@@ -256,6 +317,7 @@ export default function App() {
     onOpenNative: fileActions.openNative,
     onNavigateUp: navigation.navigateUp,
     onTogglePreview: togglePreview,
+    onRenameEntry: handleRenameEntry,
   });
 
   // Accessible name for the file grid: the folder currently on screen
@@ -270,10 +332,6 @@ export default function App() {
     );
   }, [config.favorites, contextMenu]);
 
-  const activeLocalStatus: LocalFolderStatus =
-    activeFolder.sourceType === 'local'
-      ? local.localStatus[activeFolder.id] ?? 'loading'
-      : 'ready';
   const activeFolderUnavailable =
     activeLocalStatus === 'ready'
       ? null
@@ -339,6 +397,7 @@ export default function App() {
           onSelectFolder={handleSelectFolder}
           onAddLocalFolder={mounting.addLocalFolder}
           onRemoveFavorite={favoriteActions.removeFavorite}
+          onRenameFavorite={handleRenameFavorite}
           onFilterTypeChange={setFilterType}
           onRecencyChange={setRecency}
           onToggleIncludeSubfolders={handleToggleIncludeSubfolders}
@@ -421,7 +480,46 @@ export default function App() {
         onCopyText={fileActions.copyText}
         onOpenNative={fileActions.openNative}
         onRevealNative={fileActions.revealNative}
+        onRename={canRenameEntries ? handleRenameEntry : undefined}
       />
+
+      {renameTarget?.kind === 'entry' && (
+        <RenameDialog
+          title={renameTarget.entry.isFolder ? 'Rename folder' : 'Rename file'}
+          note={`Renames "${renameTarget.entry.name}" on your computer.`}
+          initialName={renameTarget.entry.name}
+          selection={editableNameRange(renameTarget.entry.name, renameTarget.entry.isFolder)}
+          maxLength={MAX_ENTRY_NAME}
+          validate={(name) =>
+            validateEntryName(name, rename.siblingNames(renameTarget.entry), renameTarget.entry.name)
+          }
+          onSubmit={async (name) => {
+            const result = await rename.renameEntry(renameTarget.entry, name);
+            if (!result.ok) return result.error;
+            setPendingSelectPath(result.entryPath);
+            setRenameTarget(null);
+            return null;
+          }}
+          onClose={() => setRenameTarget(null)}
+        />
+      )}
+
+      {renameTarget?.kind === 'favorite' && (
+        <RenameDialog
+          title="Rename pinned folder"
+          note="Changes the name shown in Foldary. The folder on your computer keeps its name."
+          initialName={renameTarget.favorite.name}
+          selection={[0, renameTarget.favorite.name.length]}
+          maxLength={MAX_FAVORITE_NAME}
+          validate={validateFavoriteName}
+          onSubmit={(name) => {
+            rename.renameFavorite(renameTarget.favorite, name);
+            setRenameTarget(null);
+            return null;
+          }}
+          onClose={() => setRenameTarget(null)}
+        />
+      )}
 
       <SettingsModal
         isOpen={settingsOpen}

@@ -11,6 +11,7 @@ import {
   Image as ImageIcon,
   LayoutGrid,
   Music,
+  Pencil,
   Star,
   Trash2,
 } from 'lucide-react';
@@ -29,6 +30,7 @@ interface SidebarProps {
   onSelectFolder: (folderId: string) => void;
   onAddLocalFolder: () => void;
   onRemoveFavorite: (folderId: string) => void;
+  onRenameFavorite: (folderId: string) => void;
   onFilterTypeChange: (type: FilterType) => void;
   onRecencyChange: (recency: RecencyFilter) => void;
   onToggleIncludeSubfolders: () => void;
@@ -110,6 +112,7 @@ export function Sidebar({
   onSelectFolder,
   onAddLocalFolder,
   onRemoveFavorite,
+  onRenameFavorite,
   onFilterTypeChange,
   onRecencyChange,
   onToggleIncludeSubfolders,
@@ -170,26 +173,40 @@ export function Sidebar({
                   )}
                   <span className="truncate flex-1">{fav.name}</span>
                   {isDefault && (
-                    <span className="text-[11px] text-[#5C5C5C] dark:text-[#A6A6A6] shrink-0">
+                    <span className="text-[11px] text-[#5C5C5C] dark:text-[#A6A6A6] shrink-0 group-hover:invisible group-focus-within:invisible">
                       Default
                     </span>
                   )}
                 </button>
 
-                {!isDefault && favorites.length > 1 && (
+                <div className="absolute right-1.5 flex items-center gap-0.5">
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onRemoveFavorite(fav.id);
+                      onRenameFavorite(fav.id);
                     }}
-                    title={`Unpin ${fav.name}`}
-                    aria-label={`Unpin ${fav.name}`}
-                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 absolute right-1.5 p-1 rounded text-[#5C5C5C] dark:text-[#A6A6A6] hover:text-red-600 dark:hover:text-red-400 hover:bg-black/5 dark:hover:bg-white/10 transition-opacity"
+                    title={`Rename ${fav.name}`}
+                    aria-label={`Rename ${fav.name}`}
+                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded text-[#5C5C5C] dark:text-[#A6A6A6] hover:text-[#0067C0] dark:hover:text-[#60CDFF] hover:bg-black/5 dark:hover:bg-white/10 transition-opacity focus-visible:outline-2 focus-visible:outline-[#0067C0]"
                   >
-                    <Trash2 className="w-3 h-3" />
+                    <Pencil className="w-3 h-3" />
                   </button>
-                )}
+                  {!isDefault && favorites.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRemoveFavorite(fav.id);
+                      }}
+                      title={`Unpin ${fav.name}`}
+                      aria-label={`Unpin ${fav.name}`}
+                      className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded text-[#5C5C5C] dark:text-[#A6A6A6] hover:text-red-600 dark:hover:text-red-400 hover:bg-black/5 dark:hover:bg-white/10 transition-opacity"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
               </li>
             );
           })}

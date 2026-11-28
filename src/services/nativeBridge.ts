@@ -125,3 +125,8 @@ export function syncNativeAccess(favorites: FavoriteFolder[]): void {
   const keep = favorites.flatMap((f) => (f.nativePath ? [f.nativePath] : []));
   void syncNativeFolders(keep).catch(() => undefined);
 }
+
+/** Renames a file or folder inside a picked folder; resolves to its new absolute path. */
+export async function renameNativePath(path: string, newName: string): Promise<string> {
+  return invoke<string>('rename_path', { path, newName });
+}

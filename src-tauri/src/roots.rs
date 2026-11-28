@@ -80,6 +80,16 @@ impl Roots {
         }
     }
 
+    /// True when `path` is an allowed root or contains one. Renaming such a folder would
+    /// cut off access the user granted, so callers refuse it.
+    pub fn holds_root(&self, path: &Path) -> bool {
+        let path = dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        self.roots
+            .lock()
+            .map(|roots| roots.iter().any(|root| root.starts_with(&path)))
+            .unwrap_or(true)
+    }
+
     #[cfg(test)]
     pub fn list(&self) -> Vec<PathBuf> {
         self.roots.lock().unwrap().clone()
