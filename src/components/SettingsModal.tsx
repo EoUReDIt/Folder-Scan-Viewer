@@ -454,7 +454,7 @@ export function SettingsModal({
                   className="h-8 px-3 rounded-md inline-flex items-center gap-1.5 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-500/10 transition-colors ml-auto"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Reset Demo</span>
+                  <span>Reset workspace</span>
                 </button>
               </div>
 

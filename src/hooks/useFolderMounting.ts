@@ -60,11 +60,23 @@ export function useFolderMounting({
         sourceType: 'local',
         ...(nativePath ? { nativePath } : {}),
       };
-      setConfig((prev) => ({ ...prev, favorites: [...prev.favorites, newFav] }));
+      // Picked from the first-run welcome screen: this is the project folder. It replaces
+      // the demo favorites and becomes the Default Folder.
+      const isProjectFolder = !config.onboarded;
+      setConfig((prev) =>
+        isProjectFolder
+          ? { ...prev, favorites: [newFav], defaultFolderId: id, onboarded: true }
+          : { ...prev, favorites: [...prev.favorites, newFav] }
+      );
       goToFolder(id, newFav);
-      notify(`Mounted "${rootName}" (${itemCount(entries.length)})`, 'success');
+      notify(
+        isProjectFolder
+          ? `Project folder set to "${rootName}" (${itemCount(entries.length)})`
+          : `Mounted "${rootName}" (${itemCount(entries.length)})`,
+        'success'
+      );
     },
-    [config.globalSortBy, config.globalSortOrder, goToFolder, notify, setConfig, storeEntries]
+    [config.globalSortBy, config.globalSortOrder, config.onboarded, goToFolder, notify, setConfig, storeEntries]
   );
 
   // Refill an existing local favorite (same id, sort and Default status) after a reload

@@ -22,6 +22,7 @@ const config = (overrides: Partial<AppConfig> = {}): AppConfig => ({
   showHiddenFiles: false,
   theme: 'light',
   favorites: [folder('a'), folder('b')],
+  onboarded: true,
   ...overrides,
 });
 
