@@ -28,7 +28,10 @@ interface FileGridProps {
   onSortColumn: (field: SortField) => void;
   onSelectRow: (entry: FileEntry) => void;
   onDoubleClickRow: (entry: FileEntry) => void;
-  onContextMenuRow: (e: React.MouseEvent, entry: FileEntry) => void;
+  /** Right-click on a row, or Shift+F10 / the Menu key on the selected row. */
+  onContextMenuRow: (position: { x: number; y: number }, entry: FileEntry) => void;
+  /** Accessible name for the grid, e.g. the folder being shown. */
+  gridLabel: string;
   onNavigateUp: () => void;
   onResetFilters: () => void;
   /** Set when the active folder is a local folder whose contents are not loaded yet. */
@@ -53,6 +56,11 @@ const COLUMNS: {
   { id: 'category', label: 'Type', align: 'left', widthClass: 'w-[14%] min-w-[100px]' },
 ];
 
+/** DOM id for a body row, referenced by the grid's aria-activedescendant. */
+function rowDomId(index: number) {
+  return `foldary-row-${index}`;
+}
+
 /** Fixed row pitch: matches the h-[38px] row class below. */
 const ROW_HEIGHT = 38;
 /** Lists longer than this only render the rows near the viewport. */
@@ -74,6 +82,7 @@ export function FileGrid({
   onNavigateUp,
   onResetFilters,
   unavailable,
+  gridLabel,
 }: FileGridProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const theadRef = useRef<HTMLTableSectionElement | null>(null);
@@ -162,6 +171,20 @@ export function FileGrid({
     if (end <= start) end = Math.min(entries.length, start + OVERSCAN * 2);
   }
   const visibleEntries = virtualized ? entries.slice(start, end) : entries;
+  const selectedIndex = selectedId ? entries.findIndex((e) => e.id === selectedId) : -1;
+  // Only point at a row that is actually rendered
+  const activeRowId =
+    selectedIndex >= start && selectedIndex < end ? rowDomId(selectedIndex) : undefined;
+
+  // Shift+F10 or the Menu key opens the row's actions menu, anchored under its name
+  const handleGridKeyDown = (e: React.KeyboardEvent<HTMLTableElement>) => {
+    if (e.key !== 'ContextMenu' && !(e.shiftKey && e.key === 'F10')) return;
+    if (selectedIndex < 0) return;
+    e.preventDefault();
+    const rect = document.getElementById(rowDomId(selectedIndex))?.getBoundingClientRect();
+    if (!rect) return;
+    onContextMenuRow({ x: rect.left + 24, y: rect.bottom }, entries[selectedIndex]);
+  };
   const topSpacer = start * ROW_HEIGHT;
   const bottomSpacer = (entries.length - end) * ROW_HEIGHT;
 
@@ -279,8 +302,17 @@ export function FileGrid({
         </div>
       ) : (
         <table
+          role="grid"
+          tabIndex={0}
+          aria-label={gridLabel}
           aria-rowcount={entries.length + 1}
-          className="w-full border-collapse text-left table-fixed"
+          aria-activedescendant={activeRowId}
+          onKeyDown={handleGridKeyDown}
+          onContextMenu={(e) => {
+            // The Menu key fires contextmenu on the focused grid itself; the keydown handler opens it
+            if (e.target === e.currentTarget) e.preventDefault();
+          }}
+          className="group w-full border-collapse text-left table-fixed outline-none"
         >
           <thead
             ref={theadRef}
@@ -334,14 +366,18 @@ export function FileGrid({
               return (
                 <tr
                   key={entry.id}
+                  id={rowDomId(start + i)}
                   aria-rowindex={start + i + 2}
                   onClick={() => onSelectRow(entry)}
                   onDoubleClick={() => onDoubleClickRow(entry)}
-                  onContextMenu={(e) => onContextMenuRow(e, entry)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    onContextMenuRow({ x: e.clientX, y: e.clientY }, entry);
+                  }}
                   aria-selected={isSelected}
                   className={`h-[38px] cursor-pointer transition-colors select-none ${
                     isSelected
-                      ? 'bg-[#0067C0]/10 dark:bg-[#60CDFF]/15 text-[#1A1A1A] dark:text-[#FFFFFF]'
+                      ? 'bg-[#0067C0]/10 dark:bg-[#60CDFF]/15 text-[#1A1A1A] dark:text-[#FFFFFF] group-focus-visible:outline-2 group-focus-visible:-outline-offset-2 group-focus-visible:outline-[#0067C0] dark:group-focus-visible:outline-[#60CDFF]'
                       : 'text-[#1A1A1A] dark:text-[#E8E8E8] hover:bg-[#F5F5F5] dark:hover:bg-[#313131]'
                   } ${entry.isHidden ? 'opacity-70' : ''}`}
                 >

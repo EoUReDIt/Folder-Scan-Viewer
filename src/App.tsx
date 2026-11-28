@@ -938,7 +938,8 @@ export default function App() {
   // Global keyboard shortcuts & arrow-key navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (settingsOpen) return;
+      // The settings dialog and the context menu handle their own keys while open
+      if (settingsOpen || contextMenu) return;
 
       const target = e.target as HTMLElement | null;
       const isInputFocused =
@@ -971,12 +972,8 @@ export default function App() {
         return;
       }
 
-      // Escape: Close context menu or clear search
+      // Escape: clear search (an open context menu closes itself)
       if (e.key === 'Escape') {
-        if (contextMenu) {
-          setContextMenu(null);
-          return;
-        }
         if (searchQuery) {
           setSearchQuery('');
           return;
@@ -1058,6 +1055,11 @@ export default function App() {
     settingsOpen,
     visibleEntries,
   ]);
+
+  // Accessible name for the file grid: the folder currently on screen
+  const gridLabel = `Files in ${
+    currentSubpath ? currentSubpath.split('/').pop() || activeFolder.name : activeFolder.name
+  }`;
 
   const contextMenuFolderAlreadyFavorited = useMemo(() => {
     if (!contextMenu || !contextMenu.entry.isFolder) return false;
@@ -1169,11 +1171,11 @@ export default function App() {
             onSortColumn={handleSortColumn}
             onSelectRow={(entry) => setSelectedId(entry.id)}
             onDoubleClickRow={handleDoubleClickRow}
-            onContextMenuRow={(e, entry) => {
-              e.preventDefault();
+            onContextMenuRow={(position, entry) => {
               setSelectedId(entry.id);
-              setContextMenu({ x: e.clientX, y: e.clientY, entry });
+              setContextMenu({ ...position, entry });
             }}
+            gridLabel={gridLabel}
             onNavigateUp={handleNavigateUp}
             onResetFilters={handleResetFilters}
             unavailable={activeFolderUnavailable}

@@ -25,6 +25,24 @@ interface SettingsModalProps {
   onNotify: (text: string, tone?: 'info' | 'success' | 'error') => void;
 }
 
+type SettingsTab = 'general' | 'config' | 'shortcuts';
+
+const TABS: { id: SettingsTab; label: string; icon: typeof SlidersHorizontal }[] = [
+  { id: 'general', label: 'Startup & Sorting', icon: SlidersHorizontal },
+  { id: 'config', label: 'config.json', icon: Download },
+  { id: 'shortcuts', label: 'Keyboard Shortcuts', icon: Keyboard },
+];
+
+const FOCUSABLE =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** Focusable controls inside the dialog, in Tab order, skipping hidden ones (like the file input). */
+function getFocusable(root: HTMLElement): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+    (el) => el.getClientRects().length > 0
+  );
+}
+
 const SHORTCUTS: { keys: string; desc: string }[] = [
   { keys: 'Ctrl + K / Ctrl + Space', desc: 'Focus folder search input' },
   { keys: '↑ / ↓', desc: 'Move selection up or down in file grid' },
@@ -32,6 +50,7 @@ const SHORTCUTS: { keys: string; desc: string }[] = [
   { keys: 'Ctrl + Enter', desc: 'Open selected file with its default app (desktop app)' },
   { keys: 'Backspace', desc: 'Navigate up to parent folder' },
   { keys: 'Space', desc: 'Toggle Quick Preview pane' },
+  { keys: 'Shift + F10 / Menu', desc: 'Open the actions menu for the selected row' },
   { keys: 'Alt + 1–9', desc: 'Switch directly to a pinned favorite folder' },
   { keys: 'Esc', desc: 'Clear search or close menus & modals' },
 ];
@@ -45,9 +64,30 @@ export function SettingsModal({
   onResetWorkspace,
   onNotify,
 }: SettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<'general' | 'config' | 'shortcuts'>('general');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [importError, setImportError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Move focus into the dialog on open, keep it there, and hand it back to the opener on close
+  useEffect(() => {
+    if (!isOpen) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    panelRef.current?.focus();
+    const keepFocusInside = (e: FocusEvent) => {
+      const panel = panelRef.current;
+      if (panel && e.target instanceof Node && !panel.contains(e.target)) {
+        panel.focus();
+      }
+    };
+    document.addEventListener('focusin', keepFocusInside);
+    return () => {
+      document.removeEventListener('focusin', keepFocusInside);
+      const focusLeftWithDialog =
+        !document.activeElement || document.activeElement === document.body;
+      if (opener?.isConnected && focusLeftWithDialog) opener.focus();
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -84,6 +124,37 @@ export function SettingsModal({
     }
   };
 
+  // Tab and Shift+Tab cycle through the dialog's controls instead of leaving it
+  const handleTrapTab = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Tab' || !panelRef.current) return;
+    const focusable = getFocusable(panelRef.current);
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (e.shiftKey && (active === first || active === panelRef.current)) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+
+  // Left/Right/Home/End move between tabs (automatic activation)
+  const handleTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    const index = TABS.findIndex((t) => t.id === activeTab);
+    let next = -1;
+    if (e.key === 'ArrowRight') next = (index + 1) % TABS.length;
+    else if (e.key === 'ArrowLeft') next = (index - 1 + TABS.length) % TABS.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = TABS.length - 1;
+    if (next < 0) return;
+    e.preventDefault();
+    setActiveTab(TABS[next].id);
+    document.getElementById(`settings-tab-${TABS[next].id}`)?.focus();
+  };
+
   const handleCopyJson = async () => {
     try {
       await navigator.clipboard.writeText(jsonPreview);
@@ -95,15 +166,20 @@ export function SettingsModal({
 
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="settings-modal-title"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-2xl max-h-[85vh] flex flex-col rounded-xl bg-white dark:bg-[#272727] border border-[#DFDFDF] dark:border-[#404040] shadow-2xl overflow-hidden">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-modal-title"
+        tabIndex={-1}
+        onKeyDown={handleTrapTab}
+        className="w-full max-w-2xl max-h-[85vh] flex flex-col rounded-xl bg-white dark:bg-[#272727] border border-[#DFDFDF] dark:border-[#404040] shadow-2xl overflow-hidden outline-none"
+      >
         {/* Modal Header */}
         <div className="px-5 py-3.5 flex items-center justify-between border-b border-[#E5E5E5] dark:border-[#383838] bg-[#F9F9F9] dark:bg-[#222222]">
           <h2
@@ -123,19 +199,25 @@ export function SettingsModal({
         </div>
 
         {/* Navigation Tabs */}
-        <div className="px-5 pt-2.5 flex items-center gap-5 border-b border-[#E5E5E5] dark:border-[#383838] bg-[#F9F9F9] dark:bg-[#222222]">
-          {[
-            { id: 'general' as const, label: 'Startup & Sorting', icon: SlidersHorizontal },
-            { id: 'config' as const, label: 'config.json', icon: Download },
-            { id: 'shortcuts' as const, label: 'Keyboard Shortcuts', icon: Keyboard },
-          ].map(({ id, label, icon: Icon }) => {
+        <div
+          role="tablist"
+          aria-label="Settings sections"
+          className="px-5 pt-2.5 flex items-center gap-5 border-b border-[#E5E5E5] dark:border-[#383838] bg-[#F9F9F9] dark:bg-[#222222]"
+        >
+          {TABS.map(({ id, label, icon: Icon }) => {
             const isActive = activeTab === id;
             return (
               <button
                 key={id}
+                id={`settings-tab-${id}`}
                 type="button"
+                role="tab"
+                aria-selected={isActive}
+                aria-controls="settings-tabpanel"
+                tabIndex={isActive ? 0 : -1}
                 onClick={() => setActiveTab(id)}
-                className={`pb-2.5 inline-flex items-center gap-1.5 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
+                onKeyDown={handleTabKeyDown}
+                className={`pb-2.5 inline-flex items-center gap-1.5 text-xs font-medium border-b-2 transition-colors whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0067C0] dark:focus-visible:outline-[#60CDFF] ${
                   isActive
                     ? 'border-[#0067C0] dark:border-[#60CDFF] text-[#0067C0] dark:text-[#60CDFF]'
                     : 'border-transparent text-[#5C5C5C] dark:text-[#A6A6A6] hover:text-[#1A1A1A] dark:hover:text-[#F3F3F3]'
@@ -149,7 +231,12 @@ export function SettingsModal({
         </div>
 
         {/* Body */}
-        <div className="p-5 overflow-y-auto flex-1 space-y-5">
+        <div
+          id="settings-tabpanel"
+          role="tabpanel"
+          aria-labelledby={`settings-tab-${activeTab}`}
+          className="p-5 overflow-y-auto flex-1 space-y-5"
+        >
           {activeTab === 'general' && (
             <>
               {/* Default Startup Folder */}
