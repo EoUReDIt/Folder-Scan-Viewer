@@ -32,7 +32,7 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | L4 | Low | `App.tsx` (879 lines at review, 1,235 now) mixes favorites, mounting and shortcuts; extract hooks | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#12](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/12) |
 | L5 | Low | No tests; no CI on push/PR; version-bump commit is pushed before the installer build succeeds | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#13](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/13) |
 | L6 | Low | `bump-version.mjs` doesn't update `package-lock.json` (fixed manually in `e918ec6`) | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#14](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/14) |
-| L7 | Low | Preview pane dark background `#222222` drifts from documented tokens | 🟡 In progress | — |
+| L7 | Low | Preview pane dark background `#222222` drifts from documented tokens | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#15](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/15) |
 
 ---
 
@@ -1099,15 +1099,15 @@ A behaviour-preserving refactor. No UI, `config.json` or storage changes.
 | Stage | Status | Notes |
 |-------|--------|-------|
 | 📋 Document | ✅ | This section |
-| 🔀 PR | ⏳ | |
-| 📝 Proposal | ⏳ | |
-| 🔧 Implementation | ⏳ | |
-| ✅ Ready-to-close check | ⏳ | |
+| 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#15](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/15) |
+| 📝 Proposal | ✅ | Below |
+| 🔧 Implementation | ✅ | 6 class changes in 2 files |
+| ✅ Ready-to-close check | ✅ | All checks pass; see below |
 | 🏁 Closed | ⏳ | |
 
 ### Problem
 
-AGENTS.md §4 pairs each light surface with a dark one. The subtle toolbar surface is `#F9F9F9` in light mode and `#2C2C2C` in dark mode. Four surfaces use the right light colour but `#222222` in dark mode, which isn't a token:
+AGENTS.md §4 pairs each light surface with a dark one. The subtle toolbar surface is `#F9F9F9` in light mode and `#2C2C2C` in dark mode. These surfaces use the right light colour but `#222222` in dark mode, which isn't a token:
 
 | Surface | File | Light | Dark now |
 |---------|------|-------|----------|
@@ -1117,5 +1117,38 @@ AGENTS.md §4 pairs each light surface with a dark one. The subtle toolbar surfa
 | Settings footer bar | `src/components/SettingsModal.tsx:494` | `#F9F9F9` | `#222222` |
 | Settings per-folder sort rows | `src/components/SettingsModal.tsx:379` | `#FAFAFA` | `#222222` |
 
-In dark mode the preview pane ends up darker than both the main canvas (`#272727`) and nearly as dark as the sidebar (`#202020`), so it reads as a separate, sunken panel rather than the light-mode "slightly raised toolbar" surface. The folder summary card inside it (`bg-white dark:bg-[#2A2A2A]`) is also off-token: in light mode it uses the canvas colour, whose dark pair is `#272727`.
+In dark mode the preview pane ends up darker than the main canvas (`#272727`) and almost as dark as the sidebar (`#202020`), so it reads as a separate, sunken panel rather than the light-mode "slightly raised toolbar" surface. The folder summary card inside it (`bg-white dark:bg-[#2A2A2A]`) is also off-token: in light mode it uses the canvas colour, whose dark pair is `#272727`.
+
+### Proposal
+
+1. Change the five `#222222` dark backgrounds above to `#2C2C2C`, the documented dark pair of `#F9F9F9`.
+2. Change the preview's summary card from `dark:bg-[#2A2A2A]` to `dark:bg-[#272727]`, the canvas token that pairs with its light `bg-white`. Without this the card would sit almost invisibly on the new `#2C2C2C` pane.
+3. Leave light mode untouched; only `dark:` classes change.
+
+### Implementation
+
+| Change | File |
+|--------|------|
+| Pane background `dark:bg-[#222222]` → `dark:bg-[#2C2C2C]`; summary card `dark:bg-[#2A2A2A]` → `dark:bg-[#272727]` | `src/components/PreviewPane.tsx` |
+| Header, tabs bar, footer and per-folder rows `dark:bg-[#222222]` → `dark:bg-[#2C2C2C]` | `src/components/SettingsModal.tsx` |
+
+No `#222222` is left in `src/`.
+
+### Ready to close
+
+| Check | Result |
+|-------|--------|
+| `npm run lint` | ✅ 0 errors |
+| `npm test` | ✅ 38 tests |
+| `npm run build` | ✅ JS bundle unchanged at 331.9 kB |
+| Screenshots, dark | ✅ Preview pane now sits just above the canvas, matching light mode, where it is slightly off-white against the white canvas. Summary card and buttons stay visible with their borders. Settings header, tabs and footer read as one surface with the body |
+| Screenshots, light | ✅ Unchanged (pane computed background is still `rgb(249, 249, 249)`) |
+| Dark text contrast on `#2C2C2C` | ✅ `#F3F3F3` 12.6:1, `#A6A6A6` 5.7:1, `#60CDFF` 7.8:1, all above WCAG AA 4.5:1 |
+| Browser regression suite (production build) | ✅ L1 6, H1 13, H2 23, H3 14, M1 18, M2 24, M3 22, M4 16, M5 17, M6 7, L3 37, web-mode check. All unchanged, 0 failures |
+| `cargo test` | ➖ Not run; no Rust changes |
+
+### Out of scope
+
+- The sort toolbar (`SortToolbar.tsx`) is `#F9F9F9` in light mode but `#272727` (the canvas colour) in dark mode, rather than the documented `#2C2C2C`. Changing it alters the main view's look, so it is left as is and noted here for a separate decision.
+- Other one-off dark shades (input `#2F2F2F`, image box `#1C1C1C`/`#1E1E1E`, tinted media cards) that have no light-mode token mismatch.
 

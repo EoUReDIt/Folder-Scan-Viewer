@@ -181,7 +181,7 @@ export function SettingsModal({
         className="w-full max-w-2xl max-h-[85vh] flex flex-col rounded-xl bg-white dark:bg-[#272727] border border-[#DFDFDF] dark:border-[#404040] shadow-2xl overflow-hidden outline-none"
       >
         {/* Modal Header */}
-        <div className="px-5 py-3.5 flex items-center justify-between border-b border-[#E5E5E5] dark:border-[#383838] bg-[#F9F9F9] dark:bg-[#222222]">
+        <div className="px-5 py-3.5 flex items-center justify-between border-b border-[#E5E5E5] dark:border-[#383838] bg-[#F9F9F9] dark:bg-[#2C2C2C]">
           <h2
             id="settings-modal-title"
             className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F3F3F3]"
@@ -202,7 +202,7 @@ export function SettingsModal({
         <div
           role="tablist"
           aria-label="Settings sections"
-          className="px-5 pt-2.5 flex items-center gap-5 border-b border-[#E5E5E5] dark:border-[#383838] bg-[#F9F9F9] dark:bg-[#222222]"
+          className="px-5 pt-2.5 flex items-center gap-5 border-b border-[#E5E5E5] dark:border-[#383838] bg-[#F9F9F9] dark:bg-[#2C2C2C]"
         >
           {TABS.map(({ id, label, icon: Icon }) => {
             const isActive = activeTab === id;
@@ -376,7 +376,7 @@ export function SettingsModal({
                   {config.favorites.map((fav) => (
                     <div
                       key={fav.id}
-                      className="px-3 py-2 flex items-center justify-between gap-3 text-xs bg-[#FAFAFA] dark:bg-[#222222]"
+                      className="px-3 py-2 flex items-center justify-between gap-3 text-xs bg-[#FAFAFA] dark:bg-[#2C2C2C]"
                     >
                       <div className="min-w-0">
                         <div className="font-medium text-[#1A1A1A] dark:text-[#F3F3F3] truncate">
@@ -491,7 +491,7 @@ export function SettingsModal({
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 flex items-center justify-end border-t border-[#E5E5E5] dark:border-[#383838] bg-[#F9F9F9] dark:bg-[#222222]">
+        <div className="px-5 py-3 flex items-center justify-end border-t border-[#E5E5E5] dark:border-[#383838] bg-[#F9F9F9] dark:bg-[#2C2C2C]">
           <button
             type="button"
             onClick={onClose}
