@@ -32,7 +32,8 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | L4 | Low | `App.tsx` (879 lines at review, 1,235 now) mixes favorites, mounting and shortcuts; extract hooks | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#12](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/12) |
 | L5 | Low | No tests; no CI on push/PR; version-bump commit is pushed before the installer build succeeds | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#13](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/13) |
 | L6 | Low | `bump-version.mjs` doesn't update `package-lock.json` (fixed manually in `e918ec6`) | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#14](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/14) |
-| L7 | Low | Preview pane dark background `#222222` drifts from documented tokens | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#15](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/15) |
+| L7 | Low | Preview pane dark background `#222222` drifts from documented tokens | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#15](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/15) |
+| L8 | Low | Sort toolbar dark background is the canvas `#272727`, not the documented toolbar `#2C2C2C`; its "Saved per folder" hint is below AA contrast | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#16](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/16) |
 
 ---
 
@@ -1103,7 +1104,7 @@ A behaviour-preserving refactor. No UI, `config.json` or storage changes.
 | 📝 Proposal | ✅ | Below |
 | 🔧 Implementation | ✅ | 6 class changes in 2 files |
 | ✅ Ready-to-close check | ✅ | All checks pass; see below |
-| 🏁 Closed | ⏳ | |
+| 🏁 Closed | ✅ | Merged 2026-11-28 (`fb60ea8`) |
 
 ### Problem
 
@@ -1149,6 +1150,60 @@ No `#222222` is left in `src/`.
 
 ### Out of scope
 
-- The sort toolbar (`SortToolbar.tsx`) is `#F9F9F9` in light mode but `#272727` (the canvas colour) in dark mode, rather than the documented `#2C2C2C`. Changing it alters the main view's look, so it is left as is and noted here for a separate decision.
+- The sort toolbar (`SortToolbar.tsx`) is `#F9F9F9` in light mode but `#272727` (the canvas colour) in dark mode, rather than the documented `#2C2C2C`. Changing it alters the main view's look, so it was left for a separate decision; now L8.
 - Other one-off dark shades (input `#2F2F2F`, image box `#1C1C1C`/`#1E1E1E`, tinted media cards) that have no light-mode token mismatch.
+
+---
+
+## L8 — Sort toolbar uses the documented toolbar token
+
+| Stage | Status | Notes |
+|-------|--------|-------|
+| 📋 Document | ✅ | This section |
+| 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#16](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/16) |
+| 📝 Proposal | ✅ | Below |
+| 🔧 Implementation | ✅ | 2 class changes in `SortToolbar.tsx` |
+| ✅ Ready-to-close check | ✅ | All checks pass; see below |
+| 🏁 Closed | ⏳ | |
+
+### Problem
+
+Found during L7. AGENTS.md §4 documents the subtle toolbar as `#F9F9F9` (light) and `#2C2C2C` (dark). The sort toolbar (`src/components/SortToolbar.tsx:42`) uses `bg-[#F9F9F9] dark:bg-[#272727]`. In dark mode it is the same colour as the file list, so the toolbar doesn't read as a separate strip the way it does in light mode.
+
+While checking contrast for the change, the "· Saved per folder" / "· Global startup sort" hint (`SortToolbar.tsx:79`) turned out to be below the WCAG AA 4.5:1 minimum for small text:
+
+| Mode | Text | Background | Contrast |
+|------|------|------------|----------|
+| Light (now) | `#767676` | `#F9F9F9` | 4.31:1 🔴 |
+| Dark (now) | `#8E8E8E` | `#272727` | 4.56:1 (only just passes) |
+| Dark on `#2C2C2C` | `#8E8E8E` | `#2C2C2C` | 4.26:1 🔴 |
+
+### Proposal
+
+1. Change the toolbar background to `dark:bg-[#2C2C2C]`.
+2. Change the hint from `text-[#767676] dark:text-[#8E8E8E]` to `text-[#5C5C5C] dark:text-[#A6A6A6]`, the secondary text colours already used across the app (for example "Sort:" and the item count).
+
+### Implementation
+
+| Change | File |
+|--------|------|
+| Toolbar `dark:bg-[#272727]` → `dark:bg-[#2C2C2C]` (line 42) | `src/components/SortToolbar.tsx` |
+| Hint `#767676` / `#8E8E8E` → `#5C5C5C` / `#A6A6A6` (line 79) | `src/components/SortToolbar.tsx` |
+
+### Ready to close
+
+| Check | Result |
+|-------|--------|
+| `npm run lint` | ✅ 0 errors |
+| `npm test` | ✅ 38 tests |
+| `npm run build` | ✅ JS bundle unchanged at 331.9 kB |
+| Screenshots, dark | ✅ The toolbar now reads as a strip above the file list, as in light mode. The segmented control stays recessed (`#1F1F1F`), and the scope button keeps its `#404040` outline |
+| Screenshots, light | ✅ Background unchanged; the hint is a little darker |
+| Hint contrast | ✅ Light 6.35:1, dark 5.74:1 (was 4.31:1 / 4.56:1) |
+| Browser regression suite (production build) | ✅ L1 6, H1 13, H2 23, H3 14, M1 18, M2 24, M3 22, M4 16, M5 17, M6 7, L3 37, web-mode check. All unchanged, 0 failures |
+| `cargo test` | ➖ Not run; no Rust changes |
+
+### Out of scope
+
+- `#767676` is also used in `TopBar.tsx`, `Sidebar.tsx` and `FileGrid.tsx`. On white it passes (4.54:1); whether any of those sit on `#F3F3F3`/`#F9F9F9` wasn't checked here.
 
