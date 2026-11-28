@@ -62,7 +62,7 @@ function toFileEntries(result: NativeScanResult, idPrefix: string): FileEntry[] 
       parentPath,
       entryPath: e.entryPath,
       fullPath: nativePath,
-      dateModified: e.modifiedMs || Date.now(),
+      dateModified: e.modifiedMs || 0,
       size: e.size,
       isHidden: e.hidden,
       nativePath,

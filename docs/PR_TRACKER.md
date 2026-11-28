@@ -20,7 +20,7 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | H1 | 🔴 High | Mounted local folders (and a local Default Folder) are never persisted; reload silently falls back to a demo folder | ✅ Merged | [#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) |
 | H2 | 🔴 High | Desktop build has no native filesystem layer: fake `Local\…` paths, no "Open file" action, `csp: null`, `core:default` only | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#3](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/3) |
 | H3 | 🔴 High | `config.json` export drops `sourceType`; re-imported local favorites become empty demo folders | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#2](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/2) |
-| M1 | 🟡 Medium | Native-picker folders get `dateModified: Date.now()`; skews recency filter and Recent sort | 🟡 In progress | (PR pending) |
+| M1 | 🟡 Medium | Native-picker folders get `dateModified: Date.now()`; skews recency filter and Recent sort | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#4](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/4) |
 | M2 | 🟡 Medium | Scan cap (2,500) leaks; fallback picker has no cap or `node_modules`/`.git` skip; no grid virtualization | ⏳ | — |
 | M3 | 🟡 Medium | "Open Containing Folder" silently persists `includeSubfolders = false` | ⏳ | — |
 | M4 | 🟡 Medium | Hidden-file detection differs between native and fallback pickers | ⏳ | — |
@@ -269,10 +269,10 @@ The web build keeps working unchanged. Every native path is behind an `isNativeS
 | Stage | Status | Notes |
 |-------|--------|-------|
 | 📋 Document | ✅ | This section |
-| 🔀 PR | ⏳ | |
+| 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#4](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/4) |
 | 📝 Proposal | ✅ | See Proposal below |
-| 🔧 Implementation | ⏳ | |
-| ✅ Ready-to-close check | ⏳ | |
+| 🔧 Implementation | ✅ | See Implementation below |
+| ✅ Ready-to-close check | ✅ | Ready, pending the owner's merge |
 | 🏁 Closed | ⏳ | |
 
 ### Problem
@@ -314,3 +314,22 @@ A smaller version of the same problem: a native (Tauri) entry with no readable t
 - Real folder timestamps in the browser. The API has none; the desktop shell already reports them (H2).
 - Scan caps and virtualization (**M2**).
 - Differences in how hidden files are detected (**M4**).
+
+### Implementation
+
+| Area | Files | What changed |
+|------|-------|--------------|
+| Roll-up | `src/services/fileProvider.ts` | New `rollUpFolderDates()`. `scanDirectoryHandle` creates folders with `dateModified: 0` and rolls the dates up deepest-first after the walk |
+| Unknown dates | `src/services/fileProvider.ts`, `src/services/nativeBridge.ts` | `isUnknownDate()`. `formatRelativeTime(0)` returns `—` and `formatExactDate(0)` returns `Unknown`. All `Date.now()` fallbacks for a missing time are now `0` |
+
+There are no UI component changes. The grid and preview already call the formatters.
+
+### Ready-to-close check
+
+| Check | Result |
+|-------|--------|
+| `npm run lint` | ✅ |
+| `npm run build` | ✅ |
+| Playwright: folder dates match their newest descendant, empty folder shows `—` / `Unknown`, *Recent* order, "Last 7 days" filter, same dates after reconnecting, fallback picker gives the same dates | ✅ 18/18 |
+| H1 / H2 / H3 regressions, web mode shows no native actions | ✅ 13/13 · 23/23 · 14/14 · 1/1 |
+| Light + dark screenshots | ✅ |
