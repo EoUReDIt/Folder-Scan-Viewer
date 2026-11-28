@@ -39,7 +39,7 @@ export function SortToolbar({
   onResetFilters,
 }: SortToolbarProps) {
   return (
-    <div className="min-h-[42px] px-4 py-1.5 flex flex-wrap items-center justify-between gap-3 bg-[#F9F9F9] dark:bg-[#272727] border-b border-[#E5E5E5] dark:border-[#383838] select-none">
+    <div className="min-h-[42px] px-4 py-1.5 flex flex-wrap items-center justify-between gap-3 bg-[#F9F9F9] dark:bg-[#2C2C2C] border-b border-[#E5E5E5] dark:border-[#383838] select-none">
       {/* Quick Sort Controls */}
       <div className="flex items-center gap-2 min-w-0">
         <span className="text-xs text-[#5C5C5C] dark:text-[#A6A6A6] whitespace-nowrap shrink-0">
@@ -76,7 +76,7 @@ export function SortToolbar({
           })}
         </div>
 
-        <span className="hidden xl:inline text-xs text-[#767676] dark:text-[#8E8E8E] whitespace-nowrap">
+        <span className="hidden xl:inline text-xs text-[#5C5C5C] dark:text-[#A6A6A6] whitespace-nowrap">
           · {startupBehavior === 'per_folder' ? 'Saved per folder' : 'Global startup sort'}
         </span>
       </div>
