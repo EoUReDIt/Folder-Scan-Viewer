@@ -31,8 +31,8 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | L3 | Low | Accessibility: rows not focusable, context menu lacks focus/arrow keys, settings modal lacks focus trap | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#11](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/11) |
 | L4 | Low | `App.tsx` (879 lines at review, 1,235 now) mixes favorites, mounting and shortcuts; extract hooks | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#12](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/12) |
 | L5 | Low | No tests; no CI on push/PR; version-bump commit is pushed before the installer build succeeds | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#13](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/13) |
-| L6 | Low | `bump-version.mjs` doesn't update `package-lock.json` (fixed manually in `e918ec6`) | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#14](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/14) |
-| L7 | Low | Preview pane dark background `#222222` drifts from documented tokens | ⏳ | — |
+| L6 | Low | `bump-version.mjs` doesn't update `package-lock.json` (fixed manually in `e918ec6`) | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#14](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/14) |
+| L7 | Low | Preview pane dark background `#222222` drifts from documented tokens | 🟡 In progress | — |
 
 ---
 
@@ -1049,7 +1049,7 @@ A behaviour-preserving refactor. No UI, `config.json` or storage changes.
 | 📝 Proposal | ✅ | Below |
 | 🔧 Implementation | ✅ | `updatePackageLockVersion`, 4 tests, `release.yml` stages the lockfile |
 | ✅ Ready-to-close check | ✅ | All checks pass; see below |
-| 🏁 Closed | ⏳ | |
+| 🏁 Closed | ✅ | Merged 2026-11-28 (`855496a`) |
 
 ### Problem
 
@@ -1091,4 +1091,31 @@ A behaviour-preserving refactor. No UI, `config.json` or storage changes.
 ### Out of scope
 
 - Workspaces or nested `package-lock.json` files; this repo has neither.
+
+---
+
+## L7 — Preview pane and settings bars use the documented dark token
+
+| Stage | Status | Notes |
+|-------|--------|-------|
+| 📋 Document | ✅ | This section |
+| 🔀 PR | ⏳ | |
+| 📝 Proposal | ⏳ | |
+| 🔧 Implementation | ⏳ | |
+| ✅ Ready-to-close check | ⏳ | |
+| 🏁 Closed | ⏳ | |
+
+### Problem
+
+AGENTS.md §4 pairs each light surface with a dark one. The subtle toolbar surface is `#F9F9F9` in light mode and `#2C2C2C` in dark mode. Four surfaces use the right light colour but `#222222` in dark mode, which isn't a token:
+
+| Surface | File | Light | Dark now |
+|---------|------|-------|----------|
+| Preview pane background | `src/components/PreviewPane.tsx:133` | `#F9F9F9` | `#222222` |
+| Settings header bar | `src/components/SettingsModal.tsx:184` | `#F9F9F9` | `#222222` |
+| Settings section tabs bar | `src/components/SettingsModal.tsx:205` | `#F9F9F9` | `#222222` |
+| Settings footer bar | `src/components/SettingsModal.tsx:494` | `#F9F9F9` | `#222222` |
+| Settings per-folder sort rows | `src/components/SettingsModal.tsx:379` | `#FAFAFA` | `#222222` |
+
+In dark mode the preview pane ends up darker than both the main canvas (`#272727`) and nearly as dark as the sidebar (`#202020`), so it reads as a separate, sunken panel rather than the light-mode "slightly raised toolbar" surface. The folder summary card inside it (`bg-white dark:bg-[#2A2A2A]`) is also off-token: in light mode it uses the canvas colour, whose dark pair is `#272727`.
 
