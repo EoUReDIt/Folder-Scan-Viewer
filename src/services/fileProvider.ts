@@ -453,16 +453,27 @@ export function computeCategoryCounts(
 }
 
 /**
+ * Scan limits shared by every folder source. Keep in sync with MAX_DEPTH, MAX_ENTRIES and
+ * SKIPPED_DIRS in src-tauri/src/scan.rs so browser and desktop scans list the same items.
+ * Depth counts levels of entries: 1 lists only the folder's direct children.
+ */
+export const SCAN_LIMITS = {
+  maxDepth: 8,
+  maxEntries: 2500,
+  skippedFolders: ['node_modules', '.git'] as readonly string[],
+};
+
+/**
  * Converts a browser FileList from <input webkitdirectory> into structured FileEntry items,
  * automatically inferring intermediate subfolder entries so directory browsing works natively.
  */
 export function convertFileListToEntries(
   files: FileList | File[],
   folderIdPrefix: string
-): { rootName: string; rootPath: string; entries: FileEntry[] } {
+): ScannedDirectory {
   const fileArray = Array.from(files);
   if (fileArray.length === 0) {
-    return { rootName: 'Local Folder', rootPath: 'Local\\Folder', entries: [] };
+    return { rootName: 'Local Folder', rootPath: 'Local\\Folder', entries: [], truncated: false };
   }
 
   const firstRel = (fileArray[0] as File & { webkitRelativePath?: string }).webkitRelativePath || '';
@@ -471,6 +482,19 @@ export function convertFileListToEntries(
 
   const entries: FileEntry[] = [];
   const folderMap = new Map<string, FileEntry>();
+  let truncated = false;
+
+  /** Folders in `folderEntryPath` that do not have an entry yet. */
+  const missingFolderCount = (folderEntryPath: string) => {
+    if (!folderEntryPath) return 0;
+    let running = '';
+    let missing = 0;
+    for (const seg of folderEntryPath.split('/')) {
+      running = running ? `${running}/${seg}` : seg;
+      if (!folderMap.has(running)) missing++;
+    }
+    return missing;
+  };
 
   const ensureFolder = (folderEntryPath: string, modifiedMs: number) => {
     const clean = folderEntryPath.replace(/^\/+|\/+$/g, '');
@@ -508,14 +532,35 @@ export function convertFileListToEntries(
     }
   };
 
-  fileArray.forEach((file, index) => {
+  for (let index = 0; index < fileArray.length; index++) {
+    const file = fileArray[index];
     const rawRel =
       (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
     const parts = rawRel.split('/').filter(Boolean);
     // Drop root folder name prefix when webkitRelativePath includes it
     const innerParts = parts.length > 1 && parts[0] === rootName ? parts.slice(1) : parts;
+    const folderParts = innerParts.slice(0, -1);
+    // Same limits as the directory-handle and desktop scans: skipped folders and anything past
+    // maxDepth are left out, but the folders above them that are in range are still listed
+    const skipAt = folderParts.findIndex((seg) => SCAN_LIMITS.skippedFolders.includes(seg));
+    if (skipAt >= 0 || innerParts.length > SCAN_LIMITS.maxDepth) {
+      const keep = Math.min(skipAt >= 0 ? skipAt : folderParts.length, SCAN_LIMITS.maxDepth);
+      const visibleFolder = folderParts.slice(0, keep).join('/');
+      const missing = missingFolderCount(visibleFolder);
+      if (missing === 0) continue;
+      if (entries.length + missing > SCAN_LIMITS.maxEntries) {
+        truncated = true;
+        break;
+      }
+      ensureFolder(visibleFolder, 0); // its listed contents are unknown here, like scan.rs
+      continue;
+    }
     const name = innerParts[innerParts.length - 1] || file.name;
-    const parentPath = innerParts.slice(0, -1).join('/');
+    const parentPath = folderParts.join('/');
+    if (entries.length + missingFolderCount(parentPath) + 1 > SCAN_LIMITS.maxEntries) {
+      truncated = true;
+      break;
+    }
     const entryPath = innerParts.join('/');
     const ext = extractExtension(name);
     const modified = file.lastModified || 0;
@@ -541,9 +586,9 @@ export function convertFileListToEntries(
       isHidden,
       localFile: file,
     });
-  });
+  }
 
-  return { rootName, rootPath, entries };
+  return { rootName, rootPath, entries, truncated };
 }
 
 interface DirectoryHandleLike {
@@ -577,6 +622,8 @@ export interface ScannedDirectory {
   rootName: string;
   rootPath: string;
   entries: FileEntry[];
+  /** True when SCAN_LIMITS.maxEntries cut the listing short. */
+  truncated: boolean;
 }
 
 /** Recursively reads a directory handle into FileEntry items. */
@@ -588,17 +635,22 @@ export async function scanDirectoryHandle(
   const rootPath = `Local\\${rootName}`;
   const entries: FileEntry[] = [];
   let counter = 0;
+  let truncated = false;
 
+  // depth 0 lists the root's direct children, matching scan.rs
   const walk = async (handle: DirectoryHandleLike, parentPath: string, depth: number) => {
-    if (depth > 8 || entries.length > 2500) return;
     for await (const [name, child] of handle.entries()) {
+      if (truncated) return;
+      if (entries.length >= SCAN_LIMITS.maxEntries) {
+        truncated = true;
+        return;
+      }
       const entryPath = parentPath ? `${parentPath}/${name}` : name;
       const relativePath = parentPath ? `.\\${parentPath.split('/').join('\\')}\\` : '.\\';
       const isHidden = name.startsWith('.');
 
       if (child.kind === 'directory') {
-        // Skip giant build folders in POC browser scans to stay snappy
-        if (name === 'node_modules' || name === '.git') continue;
+        if (SCAN_LIMITS.skippedFolders.includes(name)) continue;
         entries.push({
           id: `${folderIdPrefix}_dir_${counter++}_${entryPath}`,
           name,
@@ -614,7 +666,7 @@ export async function scanDirectoryHandle(
           size: 0,
           isHidden,
         });
-        await walk(child, entryPath, depth + 1);
+        if (depth + 1 < SCAN_LIMITS.maxDepth) await walk(child, entryPath, depth + 1);
       } else {
         try {
           const file = await child.getFile();
@@ -643,7 +695,7 @@ export async function scanDirectoryHandle(
 
   await walk(dirHandle, '', 0);
   rollUpFolderDates(entries);
-  return { rootName, rootPath, entries };
+  return { rootName, rootPath, entries, truncated };
 }
 
 /**

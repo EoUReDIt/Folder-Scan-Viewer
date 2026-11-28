@@ -32,7 +32,6 @@ import { clearHandles, deleteHandle, loadHandle, saveHandle } from './services/h
 import {
   isNativeShell,
   joinNativePath,
-  NativeScannedFolder,
   openNativePath,
   pickNativeFolder,
   revealNativePath,
@@ -123,6 +122,27 @@ export default function App() {
     setLocalStatus((prev) => ({ ...prev, [id]: status }));
   }, []);
 
+  const notify = useCallback(
+    (text: string, tone: ToastMessage['tone'] = 'info') => {
+      const id = `toast_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      setToasts((prev) => [...prev.slice(-2), { id, text, tone }]);
+      window.setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, 2800);
+    },
+    []
+  );
+
+  // Warns when a scan stopped at SCAN_LIMITS.maxEntries (browser and desktop alike)
+  const reportTruncatedScan = useCallback(
+    (scan: { rootName: string; entries: FileEntry[]; truncated: boolean }) => {
+      if (scan.truncated) {
+        notify(`"${scan.rootName}" is large: only the first ${scan.entries.length} items are listed`, 'info');
+      }
+    },
+    [notify]
+  );
+
   // Rescan a local favorite from its stored handle. `request` asks the browser for
   // permission and must only be true inside a click handler.
   const restoreLocalFolder = useCallback(
@@ -134,8 +154,9 @@ export default function App() {
           return false;
         }
         try {
-          const { entries } = await scanNativeFolder(nativePath, id);
-          setLocalFolders((prev) => ({ ...prev, [id]: entries }));
+          const scanned = await scanNativeFolder(nativePath, id);
+          setLocalFolders((prev) => ({ ...prev, [id]: scanned.entries }));
+          reportTruncatedScan(scanned);
           setFolderStatus(id, 'ready');
           return true;
         } catch {
@@ -156,8 +177,9 @@ export default function App() {
         return false;
       }
       try {
-        const { entries } = await scanDirectoryHandle(handle, id);
-        setLocalFolders((prev) => ({ ...prev, [id]: entries }));
+        const scanned = await scanDirectoryHandle(handle, id);
+        setLocalFolders((prev) => ({ ...prev, [id]: scanned.entries }));
+        reportTruncatedScan(scanned);
         setFolderStatus(id, 'ready');
         return true;
       } catch {
@@ -166,18 +188,7 @@ export default function App() {
         return false;
       }
     },
-    [setFolderStatus]
-  );
-
-  const notify = useCallback(
-    (text: string, tone: ToastMessage['tone'] = 'info') => {
-      const id = `toast_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-      setToasts((prev) => [...prev.slice(-2), { id, text, tone }]);
-      window.setTimeout(() => {
-        setToasts((prev) => prev.filter((t) => t.id !== id));
-      }, 2800);
-    },
-    []
+    [reportTruncatedScan, setFolderStatus]
   );
 
   // Sync Tailwind dark mode class with config.theme
@@ -677,16 +688,6 @@ export default function App() {
     [config.favorites, notify, setFolderStatus]
   );
 
-  // Reports a native pick or scan failure, and warns when the scan hit its entry limit
-  const reportNativeScan = useCallback(
-    (picked: NativeScannedFolder) => {
-      if (picked.truncated) {
-        notify(`"${picked.rootName}" is large: only the first ${picked.entries.length} items are listed`, 'info');
-      }
-    },
-    [notify]
-  );
-
   const handleAddLocalFolder = useCallback(async () => {
     const id = `local_${Date.now()}`;
     if (NATIVE_SHELL) {
@@ -694,7 +695,7 @@ export default function App() {
         const picked = await pickNativeFolder(id);
         if (!picked) return;
         mountEntriesAsLocalFavorite(id, picked.rootName, picked.rootPath, picked.entries, undefined, picked.rootPath);
-        reportNativeScan(picked);
+        reportTruncatedScan(picked);
       } catch (err) {
         notify(`Could not open folder: ${String(err)}`, 'error');
       }
@@ -709,6 +710,7 @@ export default function App() {
         result.entries,
         result.handle
       );
+      reportTruncatedScan(result);
       return;
     }
     if (result.status === 'cancelled') {
@@ -717,7 +719,7 @@ export default function App() {
     // Fallback to standard directory input (works reliably inside iframes and all browsers)
     remountTargetRef.current = null;
     folderInputRef.current?.click();
-  }, [mountEntriesAsLocalFavorite, notify, reportNativeScan]);
+  }, [mountEntriesAsLocalFavorite, notify, reportTruncatedScan]);
 
   const handleChooseLocalFolderAgain = useCallback(
     async (id: string) => {
@@ -736,7 +738,7 @@ export default function App() {
           }));
           syncNativeAccess(nextFavorites);
           refillLocalFavorite(id, picked.entries);
-          reportNativeScan(picked);
+          reportTruncatedScan(picked);
         } catch (err) {
           notify(`Could not open folder: ${String(err)}`, 'error');
         }
@@ -745,13 +747,14 @@ export default function App() {
       const result = await tryPickDirectoryWithNativeApi(id);
       if (result.status === 'picked') {
         refillLocalFavorite(id, result.entries, result.handle);
+        reportTruncatedScan(result);
         return;
       }
       if (result.status === 'cancelled') return;
       remountTargetRef.current = id;
       folderInputRef.current?.click();
     },
-    [config.favorites, notify, refillLocalFavorite, reportNativeScan]
+    [config.favorites, notify, refillLocalFavorite, reportTruncatedScan]
   );
 
   const handleReconnectLocalFolder = useCallback(
@@ -780,16 +783,18 @@ export default function App() {
       remountTargetRef.current = null;
       if (!files || files.length === 0) return;
       if (targetId && config.favorites.some((f) => f.id === targetId)) {
-        const { entries } = convertFileListToEntries(files, targetId);
-        refillLocalFavorite(targetId, entries);
+        const scanned = convertFileListToEntries(files, targetId);
+        refillLocalFavorite(targetId, scanned.entries);
+        reportTruncatedScan(scanned);
       } else {
         const id = `local_${Date.now()}`;
-        const { rootName, rootPath, entries } = convertFileListToEntries(files, id);
-        mountEntriesAsLocalFavorite(id, rootName, rootPath, entries);
+        const scanned = convertFileListToEntries(files, id);
+        mountEntriesAsLocalFavorite(id, scanned.rootName, scanned.rootPath, scanned.entries);
+        reportTruncatedScan(scanned);
       }
       e.target.value = '';
     },
-    [config.favorites, mountEntriesAsLocalFavorite, refillLocalFavorite]
+    [config.favorites, mountEntriesAsLocalFavorite, refillLocalFavorite, reportTruncatedScan]
   );
 
   const handleCopyText = useCallback(

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ArrowDown,
   ArrowUp,
@@ -53,6 +53,13 @@ const COLUMNS: {
   { id: 'category', label: 'Type', align: 'left', widthClass: 'w-[14%] min-w-[100px]' },
 ];
 
+/** Fixed row pitch: matches the h-[38px] row class below. */
+const ROW_HEIGHT = 38;
+/** Lists longer than this only render the rows near the viewport. */
+const VIRTUALIZE_AFTER = 150;
+/** Extra rows rendered above and below the viewport while virtualized. */
+const OVERSCAN = 12;
+
 export function FileGrid({
   entries,
   selectedId,
@@ -68,18 +75,93 @@ export function FileGrid({
   onResetFilters,
   unavailable,
 }: FileGridProps) {
-  const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const theadRef = useRef<HTMLTableSectionElement | null>(null);
+  const tbodyRef = useRef<HTMLTableSectionElement | null>(null);
+  const [view, setView] = useState({ scrollTop: 0, height: 0, tbodyTop: 0 });
+
+  // Where the first body row sits inside the scrolled content (below the Up bar and header)
+  const measureTbodyTop = useCallback(() => {
+    const container = containerRef.current;
+    const tbody = tbodyRef.current;
+    if (!container || !tbody) return 0;
+    return (
+      tbody.getBoundingClientRect().top -
+      container.getBoundingClientRect().top +
+      container.scrollTop
+    );
+  }, []);
+
+  const syncView = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const next = {
+      scrollTop: container.scrollTop,
+      height: container.clientHeight,
+      tbodyTop: measureTbodyTop(),
+    };
+    setView((prev) =>
+      prev.scrollTop === next.scrollTop &&
+      prev.height === next.height &&
+      prev.tbodyTop === next.tbodyTop
+        ? prev
+        : next
+    );
+  }, [measureTbodyTop]);
+
+  const hasRows = !unavailable && entries.length > 0;
+
+  useLayoutEffect(() => {
+    syncView();
+  }, [syncView, hasRows, currentSubpath, entries.length]);
 
   useEffect(() => {
+    const container = containerRef.current;
+    if (!container || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => syncView());
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [syncView]);
+
+  // Keep the selected row in view, clear of the sticky header. Works by index, so it also
+  // reaches rows that are not rendered while the list is virtualized.
+  useEffect(() => {
     if (!selectedId) return;
-    const el = rowRefs.current.get(selectedId);
-    if (el) {
-      el.scrollIntoView({ block: 'nearest' });
+    const container = containerRef.current;
+    if (!container) return;
+    const index = entries.findIndex((e) => e.id === selectedId);
+    if (index < 0) return;
+    const headerHeight = theadRef.current?.offsetHeight ?? 0;
+    const rowTop = measureTbodyTop() + index * ROW_HEIGHT;
+    const rowBottom = rowTop + ROW_HEIGHT;
+    if (rowTop - headerHeight < container.scrollTop) {
+      container.scrollTop = rowTop - headerHeight;
+    } else if (rowBottom > container.scrollTop + container.clientHeight) {
+      container.scrollTop = rowBottom - container.clientHeight;
     }
+    // Only follow selection changes, not every re-sort or filter keystroke
   }, [selectedId]);
 
+  const virtualized = entries.length > VIRTUALIZE_AFTER;
+  let start = 0;
+  let end = entries.length;
+  if (virtualized) {
+    const offset = view.scrollTop - view.tbodyTop;
+    const height = view.height || 800;
+    start = Math.max(0, Math.floor(offset / ROW_HEIGHT) - OVERSCAN);
+    end = Math.min(entries.length, Math.ceil((offset + height) / ROW_HEIGHT) + OVERSCAN);
+    if (end <= start) end = Math.min(entries.length, start + OVERSCAN * 2);
+  }
+  const visibleEntries = virtualized ? entries.slice(start, end) : entries;
+  const topSpacer = start * ROW_HEIGHT;
+  const bottomSpacer = (entries.length - end) * ROW_HEIGHT;
+
   return (
-    <div className="flex-1 min-h-0 overflow-auto bg-white dark:bg-[#272727]">
+    <div
+      ref={containerRef}
+      onScroll={virtualized ? syncView : undefined}
+      className="flex-1 min-h-0 overflow-auto bg-white dark:bg-[#272727]"
+    >
       {currentSubpath && (
         <div className="px-4 py-1.5 bg-[#FAFAFA] dark:bg-[#242424] border-b border-[#EFEFEF] dark:border-[#343434] flex items-center">
           <button
@@ -187,9 +269,14 @@ export function FileGrid({
           )}
         </div>
       ) : (
-        <table className="w-full border-collapse text-left table-fixed">
-          <thead className="sticky top-0 z-10 bg-[#FAFAFA] dark:bg-[#242424] border-b border-[#E5E5E5] dark:border-[#383838] select-none">
-            <tr>
+        <table
+          aria-rowcount={entries.length + 1}
+          className="w-full border-collapse text-left table-fixed"
+        >
+          <thead
+            ref={theadRef}
+            className="sticky top-0 z-10 bg-[#FAFAFA] dark:bg-[#242424] border-b border-[#E5E5E5] dark:border-[#383838] select-none">
+            <tr aria-rowindex={1}>
               {COLUMNS.map((col) => {
                 const isSorted = sortBy === col.id;
                 return (
@@ -226,16 +313,19 @@ export function FileGrid({
             </tr>
           </thead>
 
-          <tbody className="divide-y divide-[#F0F0F0] dark:divide-[#323232]">
-            {entries.map((entry) => {
+          <tbody
+            ref={tbodyRef}
+            className="divide-y divide-[#F0F0F0] dark:divide-[#323232]"
+          >
+            {topSpacer > 0 && (
+              <tr aria-hidden="true" className="border-0" style={{ height: topSpacer }} />
+            )}
+            {visibleEntries.map((entry, i) => {
               const isSelected = entry.id === selectedId;
               return (
                 <tr
                   key={entry.id}
-                  ref={(node) => {
-                    if (node) rowRefs.current.set(entry.id, node);
-                    else rowRefs.current.delete(entry.id);
-                  }}
+                  aria-rowindex={start + i + 2}
                   onClick={() => onSelectRow(entry)}
                   onDoubleClick={() => onDoubleClickRow(entry)}
                   onContextMenu={(e) => onContextMenuRow(e, entry)}
@@ -281,6 +371,9 @@ export function FileGrid({
                 </tr>
               );
             })}
+            {bottomSpacer > 0 && (
+              <tr aria-hidden="true" className="border-0" style={{ height: bottomSpacer }} />
+            )}
           </tbody>
         </table>
       )}
