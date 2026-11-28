@@ -36,8 +36,8 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | L8 | Low | Sort toolbar dark background is the canvas `#272727`, not the documented toolbar `#2C2C2C`; its "Saved per folder" hint is below AA contrast | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#16](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/16) |
 | L9 | Low | Secondary greys `#767676` / `#8E8E8E` fall below AA contrast on several backgrounds (search box, Backspace hint, sidebar counts, settings paths) | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#17](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/17) |
 | L10 | Low | Empty-state icons in the file list are `#6E6E6E` in dark mode, 2.93:1 on `#272727` (below 3:1, though decorative) | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#19](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/19) |
-| F1 | ✨ Feature | First launch always opens the demo folders; there is no step to choose a real project folder as the Default | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#20](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/20) |
-| F2 | ✨ Feature | No way to rename anything from inside the app | ⏳ Not started | |
+| F1 | ✨ Feature | First launch always opens the demo folders; there is no step to choose a real project folder as the Default | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#20](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/20) |
+| F2 | ✨ Feature | No way to rename anything from inside the app | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#21](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/21) |
 | F3 | ✨ Feature | No manual refresh: changes on disk only show after reconnecting or restarting | ⏳ Not started | |
 | F4 | ✨ Feature | Only one item can be selected at a time, and files can't be cut and pasted into another folder | ⏳ Not started | |
 
@@ -1339,7 +1339,7 @@ Option B: change the dark icon colour from `#6E6E6E` to `#8E8E8E` (4.56:1 on `#2
 | 📝 Proposal | ✅ | Below (first-run picker, desktop and web; agreed 2026-11-28) |
 | 🔧 Implementation | ✅ | New `WelcomeScreen.tsx`; `onboarded` config key; see below |
 | ✅ Ready-to-close check | ✅ | All checks pass; see below |
-| 🏁 Closed | ⏳ | |
+| 🏁 Closed | ✅ | Merged in `89d25b4` |
 
 ### Problem
 
@@ -1395,8 +1395,8 @@ Persisting a real Default already works (H1, H2): the desktop shell rescans save
 | Stage | Status | Notes |
 |-------|--------|-------|
 | 📋 Document | ✅ | This section |
-| 🔀 PR | ⏳ | Starts after F1 merges |
-| 📝 Proposal | ⏳ | |
+| 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#21](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/21) |
+| 📝 Proposal | ✅ | Below (option C: pinned-folder names and items on disk; agreed 2026-11-28) |
 | 🔧 Implementation | ⏳ | |
 | ✅ Ready-to-close check | ⏳ | |
 | 🏁 Closed | ⏳ | |
@@ -1404,6 +1404,42 @@ Persisting a real Default already works (H1, H2): the desktop shell rescans save
 ### Problem
 
 User request: "give the rename option within the app". Nothing in the app can be renamed today: pinned favorites keep the folder's name, and the context menu has no Rename action for files or folders.
+
+### Proposal
+
+The user chose **both**: rename a pinned folder's display name, and rename real files and folders on disk.
+
+**1. Pinned folder names (all sources, demo included)**
+
+- Each row in **Pinned Folders** gets a **Rename** (pencil) button next to Unpin, shown on hover and on keyboard focus.
+- Only `favorite.name` changes; the folder on disk, its path and its saved sort stay the same. The new name is saved in `config.json` (existing `name` key, so export/import stay compatible).
+- Rules: 1–80 characters after trimming.
+
+**2. Files and folders on disk (local folders only)**
+
+- Context menu → **Rename** (hint `F2`), and **F2** on the selected row.
+- Opens a small **Rename** dialog. The name is pre-filled with the stem selected (`report` in `report.pdf`). It shows a live error, and **Rename** stays disabled while the name is invalid or unchanged. Enter confirms and Esc cancels; focus is trapped and returns to the grid afterwards.
+- Name rules (same in TypeScript and Rust):
+  - not empty, `.` or `..`
+  - no `/ \ : * ? " < > |` or control characters
+  - doesn't end in a space or a dot
+  - not a Windows reserved name (`CON`, `NUL`, `COM1`…)
+  - at most 255 characters
+  - no other item in the same folder has that name (letter case ignored, but changing only the case is allowed)
+- Where it works:
+
+  | Where | How |
+  |-------|-----|
+  | Desktop app | New Rust command `rename_path`: the parent must be inside a folder the user picked (the existing allowlist), the target must not exist, then `std::fs::rename`. A folder the user picked itself can't be renamed this way (that would break its access); the dialog points to renaming the pinned name instead |
+  | Chrome / Edge, folder opened with the folder picker | Asks for write access once (browser prompt), then `FileSystemHandle.move(newName)`. Without `move()`, files are copied to the new name and the old one is removed. Folders without `move()` show "this browser can't rename folders" |
+  | Folder opened with the fallback picker, or the demo | No Rename item (read-only copy); **F2** shows a toast explaining why |
+
+- After a rename:
+  - The folder is rescanned and the renamed row stays selected.
+  - Pinned favorites inside a renamed folder get their path updated, and so does the Default.
+  - If you're inside a renamed folder, the breadcrumb follows it.
+
+**Out of scope**: undo; renaming several items at once (F4 covers selecting several); renaming from the preview pane.
 
 ---
 
