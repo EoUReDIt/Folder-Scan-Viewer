@@ -24,8 +24,8 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | M2 | 🟡 Medium | Scan cap (2,500) leaks; fallback picker has no cap or `node_modules`/`.git` skip; no grid virtualization | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#5](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/5) |
 | M3 | 🟡 Medium | "Open Containing Folder" silently persists `includeSubfolders = false` | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#6](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/6) |
 | M4 | 🟡 Medium | Hidden-file detection differs between native and fallback pickers | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#7](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/7) |
-| M5 | 🟡 Medium | Single-token fuzzy search over-matches with no relevance ranking | ✅ Ready to close | [EoUReDIt/Folder-Scan-Viewer#8](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/8) |
-| M6 | 🟡 Medium | Grid keyboard scroll-sync: rapid ↓/↑ on a 2,500-row folder sometimes drops a key and throws React error #185 (update depth exceeded). Present since M2; seen in 2–3 of 8 runs of the M2 test, old and new code alike | ⏳ | — |
+| M5 | 🟡 Medium | Single-token fuzzy search over-matches with no relevance ranking | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#8](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/8) |
+| M6 | 🟡 Medium | Grid keyboard scroll-sync: rapid ↓/↑ on a 2,500-row folder sometimes drops a key and throws React error #185 (update depth exceeded). Present since M2; seen in 2–3 of 8 runs of the M2 test, old and new code alike | ✅ Ready to close | [EoUReDIt/Folder-Scan-Viewer#9](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/9) |
 | L1 | Low | Unused AI Studio leftovers (`@google/genai`, `express`, `dotenv`, `motion`, `tsx`, Gemini `.env.example`, `metadata.json`); build tools in `dependencies` | ⏳ | — |
 | L2 | Low | Removing a local favorite leaks its `localFolders` entry | ✅ Merged | [#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) (folded into H1) |
 | L3 | Low | Accessibility: rows not focusable, context menu lacks focus/arrow keys, settings modal lacks focus trap | ⏳ | — |
@@ -578,7 +578,7 @@ The Windows *Hidden* attribute cannot be read from a browser: neither `File` nor
 | 📝 Proposal | ✅ | See Proposal below |
 | 🔧 Implementation | ✅ | See Implementation below |
 | ✅ Ready-to-close check | ✅ | See below |
-| 🏁 Closed | ⏳ | |
+| 🏁 Closed | ✅ | Merged 2026-11-28 (`93220ef`) |
 
 ### Problem
 
@@ -666,4 +666,68 @@ Consequences:
 | Same M5 test on the code before the fix | ❌ 6 failures, as described in Problem |
 | H1 / H2 / H3 / M1 / M2 / M3 / M4 regressions, web check | ✅ 13/13 · 23/23 · 14/14 · 18/18 · 24/24 · 22/22 · 16/16 · 1/1 |
 | M2 test flake (rapid arrow keys, React #185) | 🟡 Pre-existing: old code fails 3/8 runs, new code 2/8. Not caused by M5; logged as **M6** |
+| Light + dark screenshots | ✅ |
+
+## M6 — Fast arrow keys in a large folder drop a key and throw React error #185
+
+| Stage | Status | Notes |
+|-------|--------|-------|
+| 📋 Document | ✅ | This section |
+| 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#9](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/9) |
+| 📝 Proposal | ✅ | See Proposal below |
+| 🔧 Implementation | ✅ | See Implementation below |
+| ✅ Ready-to-close check | ✅ | See below |
+| 🏁 Closed | ⏳ | |
+
+### Problem
+
+In a virtualized folder (more than 150 rows), holding or quickly repeating ↓/↑ sometimes skips a row, and the page logs *Minified React error #185 (Maximum update depth exceeded)*. Found during the M5 regressions. The M2 test failed in 2–3 of 8 runs on both the old and the new code.
+
+Repro (production build, 2,500-file folder, click row 1, press ↓ 60 times, repeated 15 times): **7 of 15 rounds ended one row short, with 11 errors.** The development build does not show it, because it is slower.
+
+Cause, from the stack trace and React 19.3 source:
+1. Each ↓ calls `setSelectedId` from a keydown handler, which is a sync-lane render.
+2. `FileGrid` then sets `container.scrollTop` in a passive effect to keep the row in view.
+3. That fires a `scroll` event, and `onScroll={syncView}` calls `setView`, a continuous-lane update.
+4. When keys arrive faster than that update renders, the next key's sync commit finishes while the continuous update is still pending. React counts each such commit as a *nested update* and does not reset the counter until a commit leaves no pending work.
+5. After 50 commits in a row like this, the next `setState` throws. That is the keydown's `setSelectedId`, so the key is lost and #185 is reported.
+
+Scrolling with the mouse or wheel is not affected: it never mixes with sync keyboard updates at that rate.
+
+### Proposal
+
+1. **Sync the visible window in the same commit** (`src/components/FileGrid.tsx`)
+   - Change the keep-selection-in-view effect from `useEffect` to `useLayoutEffect`.
+   - After it writes `scrollTop`, call `syncView()` straight away. The rendered rows are then updated inside the keypress's own commit. This also stops a one-frame blank gap at the edge while the window catches up.
+2. **Ignore scroll events that change nothing** (`src/components/FileGrid.tsx`)
+   - `syncView` keeps the last measured view in a ref and only calls `setView` when scroll position, height or body offset really changed.
+   - The scroll event fired by the programmatic scroll in step 1 then finds nothing new and schedules no update, so no work is left pending between keypresses and the counter resets after every commit.
+3. **Verify**
+   - `npm run lint` and `npm run build` pass.
+   - The repro on the production build: 15 rounds of ↓×60 and ↑×30 all land on the right row, with no page errors.
+   - Holding ↓ for 300 presses from the first row reaches the 301st row (`aria-rowindex` 302), with the selected row in view below the sticky header.
+   - Mouse-wheel scrolling still renders the right rows: top, middle and bottom of the 2,500-row list.
+   - The M2 test passes 8 of 8 runs. All other regressions pass (H1, H2, H3, M1, M3, M4, M5). Light and dark screenshots.
+
+**Out of scope**:
+- Changing how keys are handled in `App.tsx` (the handler is correct once the throw is gone).
+- Making the virtual window size or overscan configurable.
+
+### Implementation
+
+| Area | Files | What changed |
+|------|-------|--------------|
+| Same-commit sync | `src/components/FileGrid.tsx` | The keep-selection-in-view effect is now `useLayoutEffect` and calls `syncView()` after it adjusts `scrollTop`, so the virtual window updates inside the keypress's own commit |
+| Quiet scroll events | `src/components/FileGrid.tsx` | `syncView` compares against `viewRef` (the last measured view) and returns without calling `setView` when nothing changed. The scroll event that follows a programmatic scroll therefore schedules no work |
+
+### Ready-to-close check
+
+| Check | Result |
+|-------|--------|
+| `npm run lint` | ✅ |
+| `npm run build` | ✅ |
+| Playwright M6 test, production build, 2,500-file folder: 15 rounds of ↓×60 then ↑×30 land on the right rows, in view; 300 × ↓ reaches `aria-rowindex` 302 in view; the virtual window covers the selection; wheel scrolling fills the viewport at mid-list and reaches the last row; no page errors | ✅ 7/7 |
+| Same M6 test on the code before the fix | ❌ 4 failures: 7 of 15 rounds one row short, 300 presses lost 4 keys, React #185 logged |
+| M2 test, 8 runs in a row (was failing in 2–3 of 8) | ✅ 8/8 runs clean, 24/24 each |
+| H1 / H2 / H3 / M1 / M3 / M4 / M5 regressions, web check | ✅ 13/13 · 23/23 · 14/14 · 18/18 · 22/22 · 16/16 · 17/17 · 1/1 |
 | Light + dark screenshots | ✅ |
