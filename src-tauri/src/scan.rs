@@ -40,6 +40,8 @@ fn modified_ms(meta: &fs::Metadata) -> f64 {
         .unwrap_or(0.0)
 }
 
+// Browsers cannot read this attribute, so web mode hides by the dot rule alone
+// (isHiddenEntryPath in src/services/fileProvider.ts).
 #[cfg(windows)]
 fn has_hidden_attribute(meta: &fs::Metadata) -> bool {
     use std::os::windows::fs::MetadataExt;

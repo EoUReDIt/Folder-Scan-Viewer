@@ -464,6 +464,15 @@ export const SCAN_LIMITS = {
 };
 
 /**
+ * Hidden rule for the browser scanners: an entry is hidden when its own name or any folder
+ * above it starts with '.', so everything inside a hidden folder is hidden too (as in scan.rs).
+ * Browsers cannot read the Windows Hidden attribute, so only the desktop scan uses it.
+ */
+export function isHiddenEntryPath(entryPath: string): boolean {
+  return entryPath.split('/').some((seg) => seg.startsWith('.'));
+}
+
+/**
  * Converts a browser FileList from <input webkitdirectory> into structured FileEntry items,
  * automatically inferring intermediate subfolder entries so directory browsing works natively.
  */
@@ -525,7 +534,7 @@ export function convertFileListToEntries(
         fullPath: `${rootPath}\\${running.split('/').join('\\')}`,
         dateModified: modifiedMs,
         size: 0,
-        isHidden: seg.startsWith('.'),
+        isHidden: isHiddenEntryPath(running),
       };
       folderMap.set(running, entry);
       entries.push(entry);
@@ -564,7 +573,7 @@ export function convertFileListToEntries(
     const entryPath = innerParts.join('/');
     const ext = extractExtension(name);
     const modified = file.lastModified || 0;
-    const isHidden = innerParts.some((seg) => seg.startsWith('.'));
+    const isHidden = isHiddenEntryPath(entryPath);
 
     if (parentPath) {
       ensureFolder(parentPath, modified);
@@ -647,7 +656,7 @@ export async function scanDirectoryHandle(
       }
       const entryPath = parentPath ? `${parentPath}/${name}` : name;
       const relativePath = parentPath ? `.\\${parentPath.split('/').join('\\')}\\` : '.\\';
-      const isHidden = name.startsWith('.');
+      const isHidden = isHiddenEntryPath(entryPath);
 
       if (child.kind === 'directory') {
         if (SCAN_LIMITS.skippedFolders.includes(name)) continue;

@@ -22,8 +22,8 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | H3 | 🔴 High | `config.json` export drops `sourceType`; re-imported local favorites become empty demo folders | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#2](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/2) |
 | M1 | 🟡 Medium | Native-picker folders get `dateModified: Date.now()`; skews recency filter and Recent sort | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#4](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/4) |
 | M2 | 🟡 Medium | Scan cap (2,500) leaks; fallback picker has no cap or `node_modules`/`.git` skip; no grid virtualization | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#5](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/5) |
-| M3 | 🟡 Medium | "Open Containing Folder" silently persists `includeSubfolders = false` | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#6](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/6) |
-| M4 | 🟡 Medium | Hidden-file detection differs between native and fallback pickers | ⏳ | — |
+| M3 | 🟡 Medium | "Open Containing Folder" silently persists `includeSubfolders = false` | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#6](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/6) |
+| M4 | 🟡 Medium | Hidden-file detection differs between native and fallback pickers | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#7](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/7) |
 | M5 | 🟡 Medium | Single-token fuzzy search over-matches with no relevance ranking | ⏳ | — |
 | L1 | Low | Unused AI Studio leftovers (`@google/genai`, `express`, `dotenv`, `motion`, `tsx`, Gemini `.env.example`, `metadata.json`); build tools in `dependencies` | ⏳ | — |
 | L2 | Low | Removing a local favorite leaks its `localFolders` entry | ✅ Merged | [#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) (folded into H1) |
@@ -430,7 +430,7 @@ One deviation from the proposal: the fallback picker also lists in-range folders
 | 📝 Proposal | ✅ | See Proposal below |
 | 🔧 Implementation | ✅ | See Implementation below |
 | ✅ Ready-to-close check | ✅ | Ready, pending the owner's merge |
-| 🏁 Closed | ⏳ | |
+| 🏁 Closed | ✅ | Merged 2026-11-28 (`c5f32aa`) |
 
 ### Problem
 
@@ -495,3 +495,76 @@ One addition to the proposal: the `FileGrid.tsx` dependency change. Without it, 
 | With subfolders off, the action keeps *Current Folder Only*, and it stays off after navigating | ✅ 22/22 total |
 | H1 / H2 / H3 / M1 / M2 regressions, web check | ✅ 13/13 · 23/23 · 14/14 · 18/18 · 24/24 · 1/1 |
 | Light + dark screenshots | ✅ |
+
+## M4 — Hidden-file detection differs between the desktop scan and the browser pickers
+
+| Stage | Status | Notes |
+|-------|--------|-------|
+| 📋 Document | ✅ | This section |
+| 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#7](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/7) |
+| 📝 Proposal | ✅ | See Proposal below |
+| 🔧 Implementation | ✅ | See Implementation below |
+| ✅ Ready-to-close check | ✅ | Ready, pending the owner's merge |
+| 🏁 Closed | ⏳ | |
+
+### Problem
+
+*Show hidden files* hides entries whose `isHidden` is true. Each of the three scanners sets that flag its own way, so the same folder shows different files depending on how it was opened.
+
+| Scanner | Name starts with `.` | Inside a hidden folder | Windows *Hidden* attribute |
+|---------|----------------------|------------------------|----------------------------|
+| Desktop, `src-tauri/src/scan.rs` | ✅ | ✅ inherited from the parent | ✅ |
+| Browser folder handle, `scanDirectoryHandle` | ✅ | ❌ | ❌ |
+| Browser fallback picker, files (`convertFileListToEntries`) | ✅ | ✅ any `.` segment | ❌ |
+| Browser fallback picker, folders (`ensureFolder`) | ✅ | ❌ | ❌ |
+
+What the user sees with *Show hidden files* off and *Include subfolders* on:
+- **Folder-handle picker** (Chrome, Edge): everything inside a hidden folder is listed. For example, `.config/settings.json` or `.vscode/launch.json` show up even though `.config` itself is hidden. The sidebar counts include them too.
+- **Fallback picker** (Firefox, Safari): files inside `.config` are hidden, but a subfolder such as `.config/nested/` is still listed.
+- **Desktop**: all of it is hidden, which is the intended behavior.
+
+The Windows *Hidden* attribute cannot be read from a browser: neither `File` nor the File System Access API exposes it. That part of the gap cannot be closed in web mode.
+
+### Proposal
+
+1. **One rule for the browser** (`src/services/fileProvider.ts`)
+   - New exported helper `isHiddenEntryPath(entryPath: string): boolean`. It is true when any `/`-separated segment starts with `.`. This is the same as the desktop rule without the attribute check, because a hidden parent makes everything under it hidden.
+2. **Use it in both browser scanners**
+   - `scanDirectoryHandle`: replace `name.startsWith('.')` with the helper on the entry path, for folders and files.
+   - `convertFileListToEntries`: use the helper in `ensureFolder` (on the folder path built so far) and for files.
+3. **Document the remaining gap**
+   - A comment on the helper and on `has_hidden_attribute` in `scan.rs` says the browser cannot see the Windows attribute, so web mode only uses the dot rule.
+   - The desktop scan keeps its current behavior. No Rust change.
+4. **Verify**
+   - `npm run lint` and `npm run build` pass. `cargo test` is unchanged.
+   - Playwright on the same tree through both browser pickers (mocked `showDirectoryPicker`, and the fallback input on a disk fixture). The tree holds `.config/settings.json`, `.config/nested/deep.txt`, `.env`, `docs/.draft.md` and visible files.
+   - With *Show hidden files* off, both pickers list exactly the same visible set, with no hidden entry and no item inside a hidden folder. The sidebar counts match.
+   - With it on, both pickers list the full tree, the same set as each other.
+   - H1, H2, H3, M1, M2 and M3 regressions pass. Light and dark screenshots.
+
+**Out of scope**:
+- Reading the Windows *Hidden* attribute in web mode. No browser API exposes it.
+- Changing what the desktop scan treats as hidden.
+- A user-defined hide list, such as `Thumbs.db` or `desktop.ini`.
+
+### Implementation
+
+| Area | Files | What changed |
+|------|-------|--------------|
+| Shared rule | `src/services/fileProvider.ts` | New `isHiddenEntryPath(entryPath)`: true when any path segment starts with `.` |
+| Folder-handle scan | `src/services/fileProvider.ts` | `scanDirectoryHandle` uses the helper on the entry path, for folders and files |
+| Fallback picker | `src/services/fileProvider.ts` | `convertFileListToEntries` uses the helper for files and in `ensureFolder` (on the folder path built so far) |
+| Desktop note | `src-tauri/src/scan.rs` | Comment only: browsers cannot read the Windows attribute, so web mode uses the dot rule alone. No behavior change |
+
+### Ready-to-close check
+
+| Check | Result |
+|-------|--------|
+| `npm run lint` | ✅ |
+| `npm run build` | ✅ |
+| `cargo test` | ✅ 10/10 (unchanged) |
+| Same M4 test on the code before the fix | ❌ 9 failures, as described in Problem: the folder-handle picker leaked `settings.json`, `nested` and `deep.txt`; the fallback picker leaked `nested` |
+| Playwright, both pickers on the same tree: hidden off lists exactly the 5 visible items with sidebar *All* = 5; hidden on lists all 11 with *All* = 11; exactly the hidden entries are dimmed; both pickers give the same sets | ✅ 16/16 |
+| H1 / H2 / H3 / M1 / M2 / M3 regressions, web check | ✅ 13/13 · 23/23 · 14/14 · 18/18 · 24/24 · 22/22 · 1/1 |
+| Light + dark screenshots | ✅ |
+
