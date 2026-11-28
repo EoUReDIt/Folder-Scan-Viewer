@@ -26,7 +26,7 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | M4 | 🟡 Medium | Hidden-file detection differs between native and fallback pickers | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#7](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/7) |
 | M5 | 🟡 Medium | Single-token fuzzy search over-matches with no relevance ranking | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#8](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/8) |
 | M6 | 🟡 Medium | Grid keyboard scroll-sync: rapid ↓/↑ on a 2,500-row folder sometimes drops a key and throws React error #185 (update depth exceeded). Present since M2; seen in 2–3 of 8 runs of the M2 test, old and new code alike | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#9](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/9) |
-| L1 | Low | Unused AI Studio leftovers (`@google/genai`, `express`, `dotenv`, `motion`, `tsx`, Gemini `.env.example`, `metadata.json`); build tools in `dependencies` | 🟡 In progress | (PR pending) |
+| L1 | Low | Unused AI Studio leftovers (`@google/genai`, `express`, `dotenv`, `motion`, `tsx`, Gemini `.env.example`, `metadata.json`); build tools in `dependencies` | ✅ Ready to close | [EoUReDIt/Folder-Scan-Viewer#10](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/10) |
 | L2 | Low | Removing a local favorite leaks its `localFolders` entry | ✅ Merged | [#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) (folded into H1) |
 | L3 | Low | Accessibility: rows not focusable, context menu lacks focus/arrow keys, settings modal lacks focus trap | ⏳ | — |
 | L4 | Low | `App.tsx` (879 lines) mixes favorites, mounting and shortcuts; extract hooks | ⏳ | — |
@@ -677,7 +677,7 @@ Consequences:
 | 📝 Proposal | ✅ | See Proposal below |
 | 🔧 Implementation | ✅ | See Implementation below |
 | ✅ Ready-to-close check | ✅ | See below |
-| 🏁 Closed | ⏳ | |
+| 🏁 Closed | ✅ | Merged 2026-11-28 (`4601f45`) |
 
 ### Problem
 
@@ -739,10 +739,11 @@ Scrolling with the mouse or wheel is not affected: it never mixes with sync keyb
 | Stage | Status | Notes |
 |-------|--------|-------|
 | 📋 Document | ✅ | This section |
-| 🔀 PR | ⏳ | |
+| 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#10](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/10) |
 | 📝 Proposal | ✅ | See Proposal below |
-| 🔧 Implementation | ⏳ | |
-| ✅ Ready-to-close check | ⏳ | |
+| 🔧 Implementation | ✅ | See Implementation below |
+| ✅ Ready-to-close check | ✅ | See below |
+| 🏁 Closed | ⏳ | |
 
 ### Problem
 
@@ -777,3 +778,23 @@ Effect: a slower `npm install` with about a dozen unused packages, a misleading 
 
 - The `DISABLE_HMR` switch in `vite.config.ts`. It is off unless the variable is set, costs nothing, and still matters if the project is ever edited in AI Studio again.
 - The `@/*` path alias in `vite.config.ts` and `tsconfig.json`. It is unused, but it is ordinary project config rather than an AI Studio leftover.
+
+### Implementation
+
+| Area | Files | What changed |
+|------|-------|--------------|
+| Packages | `package.json`, `package-lock.json` | Removed `@google/genai`, `express`, `@types/express`, `dotenv`, `motion`, `tsx`, `autoprefixer`, `esbuild`. Moved `vite`, `@vitejs/plugin-react` and `@tailwindcss/vite` to `devDependencies`. `dependencies` is now `@tauri-apps/api`, `lucide-react`, `react` and `react-dom`. The lockfile went from 212 to 87 packages, with no version change for any package that stayed, and it now lists every platform's native Tailwind, Rolldown and Lightning CSS binary |
+| Template files | `.env.example`, `metadata.json`, `.gitignore` | Deleted both files; dropped the `!.env.example` exception (`.env*` stays ignored) |
+| Scripts | `package.json` | `clean` is now `rm -rf dist` |
+| Vite config | `vite.config.ts` | The asset-copy comment now names the demo workspace images instead of AI Studio's `generate_image` |
+
+### Ready-to-close check
+
+| Check | Result |
+|-------|--------|
+| Clean `npm ci` | ✅ 0 vulnerabilities |
+| `npm run lint` | ✅ |
+| `npm run build` | ✅ The 3 demo images are copied to `dist/src/assets/images`; no Gemini strings in `dist` |
+| Release workflow and `tauri.conf.json` | ✅ `npm ci` installs devDependencies (nothing sets `--omit=dev` or `NODE_ENV=production`); `beforeBuildCommand` is still `npm run build` |
+| Playwright L1 test, production build: all 3 demo images served as JPEG, demo grid renders, no failed requests, no console errors | ✅ 6/6 |
+| H1 / H2 / H3 / M1 / M2 / M3 / M4 / M5 / M6 regressions, web check | ✅ 13/13 · 23/23 · 14/14 · 18/18 · 24/24 · 22/22 · 16/16 · 17/17 · 7/7 · 1/1 |
