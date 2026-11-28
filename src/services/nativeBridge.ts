@@ -6,7 +6,7 @@
  * In a plain browser `isNativeShell()` is false and none of these are called.
  */
 import { invoke } from '@tauri-apps/api/core';
-import { FileEntry } from '../types/foldary';
+import { FavoriteFolder, FileEntry } from '../types/foldary';
 import { categorizeExtension, extractExtension } from './fileProvider';
 
 interface NativeEntry {
@@ -114,4 +114,14 @@ export async function revealNativePath(path: string): Promise<void> {
 /** Tells the shell which disk paths favorites still use, so it can forget the rest. */
 export async function syncNativeFolders(keep: string[]): Promise<void> {
   await invoke('sync_folders', { keep });
+}
+
+/**
+ * Tells the shell which picked folders the given favorites still use, so it can forget
+ * the others. Does nothing in a plain browser; failures are ignored.
+ */
+export function syncNativeAccess(favorites: FavoriteFolder[]): void {
+  if (!isNativeShell()) return;
+  const keep = favorites.flatMap((f) => (f.nativePath ? [f.nativePath] : []));
+  void syncNativeFolders(keep).catch(() => undefined);
 }

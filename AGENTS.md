@@ -39,7 +39,9 @@ Keep UI components strictly decoupled from filesystem and persistence adapters s
   - `ContextMenu.tsx` — Viewport-clamped right-click menu for folder and file actions.
   - `SettingsModal.tsx` — Startup sort mode (`per_folder` vs. `global`), global sort defaults, per-folder sort overview, live `config.json` import/export, and keyboard shortcuts reference.
   - `FileIcon.tsx` & `ToastContainer.tsx` — Semantic file icons and non-blocking action notifications.
-- `src/App.tsx` — Top-level state orchestration, keyboard shortcut bindings, dark-mode class sync, and folder source resolution.
+- `src/services/startup.ts` — Startup folder and startup sort rules (`getInitialFolder`, `getStartupSort`).
+- `src/hooks/` — App state split by concern: `useToasts`, `useAppConfig` (persistence + dark class), `useFolderNavigation` (active folder, subpath, sort), `useLocalFolders` (runtime store of local favorites), `useFolderMounting` (add / choose again / reconnect), `useFavorites` (pin, remove, Default), `useKeyboardShortcuts`, `useFileActions`. Hooks own app state and may call `src/services/`. Components get state and actions as props and never import from `src/hooks/`. Hooks get their inputs as arguments rather than reading another hook's state.
+- `src/App.tsx` — Composes the hooks, holds view state (search, filters, selection, preview, menus, scope override), derives the visible list, and renders the layout.
 
 ## 4. Design System & UI Invariants
 
