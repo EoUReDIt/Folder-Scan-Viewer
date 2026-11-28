@@ -18,8 +18,8 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | ID | Severity | Finding | Status | PR |
 |----|----------|---------|--------|----|
 | H1 | 🔴 High | Mounted local folders (and a local Default Folder) are never persisted; reload silently falls back to a demo folder | ✅ Merged | [#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) |
-| H2 | 🔴 High | Desktop build has no native filesystem layer: fake `Local\…` paths, no "Open file" action, `csp: null`, `core:default` only | ⏳ | — |
-| H3 | 🔴 High | `config.json` export drops `sourceType`; re-imported local favorites become empty demo folders | 🟡 Ready to close | [EoUReDIt/Folder-Scan-Viewer#2](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/2) |
+| H2 | 🔴 High | Desktop build has no native filesystem layer: fake `Local\…` paths, no "Open file" action, `csp: null`, `core:default` only | 🟡 In progress | (PR pending) |
+| H3 | 🔴 High | `config.json` export drops `sourceType`; re-imported local favorites become empty demo folders | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#2](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/2) |
 | M1 | 🟡 Medium | Native-picker folders get `dateModified: Date.now()`; skews recency filter and Recent sort | ⏳ | — |
 | M2 | 🟡 Medium | Scan cap (2,500) leaks; fallback picker has no cap or `node_modules`/`.git` skip; no grid virtualization | ⏳ | — |
 | M3 | 🟡 Medium | "Open Containing Folder" silently persists `includeSubfolders = false` | ⏳ | — |
@@ -120,7 +120,7 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | 📝 Proposal | ✅ | See Proposal below |
 | 🔧 Implementation | ✅ | See Implementation below |
 | ✅ Ready-to-close check | ✅ | See Ready-to-close check below |
-| 🏁 Closed | ⏳ | Awaiting merge approval |
+| 🏁 Closed | ✅ | Merged to `main` as `fc49c82` |
 
 ### Problem
 
@@ -165,3 +165,72 @@ Since H1, local favorites persist in `localStorage`, so they now always reach th
 | Default demo config imports unchanged | ✅ Playwright |
 | H1 regression suite | ✅ 13/13 Playwright |
 | `config.json` backwards compatible (key added, none removed) | ✅ |
+
+---
+
+## H2 — Desktop build has no native filesystem layer
+
+| Stage | Status | Notes |
+|-------|--------|-------|
+| 📋 Document | ✅ | This section |
+| 🔀 PR | ⏳ | |
+| 📝 Proposal | ✅ | See Proposal below |
+| 🔧 Implementation | ⏳ | |
+| ✅ Ready-to-close check | ⏳ | |
+| 🏁 Closed | ⏳ | |
+
+### Problem
+
+The Tauri shell (`src-tauri/`) only runs the web bundle. It registers no commands or plugins, so the desktop app behaves exactly like the browser proof of concept:
+
+- Folders are mounted through the WebView's browser APIs. Paths are shown as fake `Local\<name>\…` strings, and "Copy path" copies a path that does not exist on disk.
+- There is no way to open a file with its default app or show it in Explorer, the core job of a launcher.
+- Access after a restart depends on WebView2's File System Access permission state (H1), not on the real path.
+- `tauri.conf.json` sets `csp: null`, so the WebView runs with no Content Security Policy.
+- `capabilities/default.json` grants only `core:default`. That is fine, but nothing in the app is scoped either.
+
+### Proposal
+
+The web build keeps working unchanged. Every native path is behind an `isNativeShell()` check, and UI that needs it is hidden in the browser so no button is dead.
+
+1. **Rust commands with a folder allowlist** (`src-tauri/src/`)
+   - `pick_folder()`: opens the OS folder dialog (`tauri-plugin-dialog`, called from Rust) and adds the chosen folder to an allowlist of roots. The allowlist is saved to `allowed_roots.json` in the app data dir, so it survives restarts.
+   - `scan_folder(path)`: walks the folder recursively. It returns name, relative path, is-folder, size, real modified time and hidden flag (dot-prefix, plus the Windows hidden attribute). It keeps the existing limits: depth 8, 2,500 entries, and skipping `node_modules` and `.git`.
+   - `read_text_snippet(path, max_bytes)` and `read_file_bytes(path, max_bytes)`, for text and image previews.
+   - `open_path(path)` and `reveal_path(path)`: open with the default app, or show in Explorer (`tauri-plugin-opener`, called from Rust).
+   - `forget_folder(path)`: removes a root from the allowlist when its favorite is removed.
+   - Every command canonicalizes the path and refuses anything outside an allowed root, so the WebView cannot read or open arbitrary files. No dialog, opener or fs permissions are granted to JavaScript.
+2. **Frontend bridge**, new `src/services/nativeBridge.ts`
+   - `isNativeShell()` plus typed wrappers around `invoke` (`@tauri-apps/api`).
+   - `scanNativeFolder()` converts results into `FileEntry` items with real `fullPath`s.
+   - UI components never call `invoke` directly (AGENTS.md §3).
+3. **Types and config** (`src/types/foldary.ts`, `src/services/configStorage.ts`)
+   - `FavoriteFolder.nativePath?: string`: the absolute folder path for desktop favorites.
+   - `FileEntry.nativePath?: string`: the absolute file path.
+   - The validator keeps `nativePath` when it is a string, and the export writes it. This only adds a key, so older `config.json` files and builds keep working; `sourceType` stays `'local'`.
+4. **App wiring** (`src/App.tsx`)
+   - In the desktop shell, "Mount local folder" and "Choose folder again" call `pick_folder`.
+   - Startup restore rescans favorites that have a `nativePath`. A missing or disallowed folder shows the existing "Choose folder again" state.
+   - Pinned subfolders get `nativePath = root + subpath`.
+   - Removing a favorite calls `forget_folder` when no other favorite still uses that root.
+5. **Open actions** (`ContextMenu.tsx`, `PreviewPane.tsx`, `App.tsx`, `SettingsModal.tsx`), shown only for entries with a `nativePath`
+   - **Open**: default app. **Show in Explorer**: reveal.
+   - `Ctrl+Enter` opens the selected file. It is added to the shortcuts reference.
+   - The preview reads text and images through the bridge, revoking object URLs as today.
+6. **Security config** (`src-tauri/tauri.conf.json`, `capabilities/default.json`)
+   - Replace `csp: null` with a strict policy:
+     - `default-src 'self'`
+     - `img-src 'self' blob: data:`
+     - `media-src 'self' blob:`
+     - `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`
+     - `font-src 'self' https://fonts.gstatic.com`
+     - `connect-src 'self' ipc: http://ipc.localhost`
+   - Capabilities stay `core:default`, with the plugin permissions not exposed to JavaScript.
+7. **Verify**
+   - `npm run lint` and `npm run build` pass.
+   - `cargo check` and `cargo test` in `src-tauri/`, with unit tests for the allowlist and path checks (outside a root, `..` traversal) and for the scan (hidden files, skipped folders, limits).
+   - Playwright with a stubbed Tauri `invoke`: mount, restore after reload, pin a subfolder, Open/Reveal calls, real path in "Copy path", and web mode unchanged (no native buttons).
+   - An actual Windows desktop run is manual: it needs the release workflow or a Windows machine.
+
+**Out of scope**: bundling fonts for offline use, a file-system watcher or live refresh, grid virtualization (**M2**), and folder dates for the browser picker (**M1**; native scans get real dates here).
+
