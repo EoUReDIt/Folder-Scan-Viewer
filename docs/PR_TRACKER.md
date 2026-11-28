@@ -35,7 +35,9 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | L7 | Low | Preview pane dark background `#222222` drifts from documented tokens | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#15](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/15) |
 | L8 | Low | Sort toolbar dark background is the canvas `#272727`, not the documented toolbar `#2C2C2C`; its "Saved per folder" hint is below AA contrast | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#16](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/16) |
 | L9 | Low | Secondary greys `#767676` / `#8E8E8E` fall below AA contrast on several backgrounds (search box, Backspace hint, sidebar counts, settings paths) | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#17](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/17) |
-| L10 | Low | Empty-state icons in the file list are `#6E6E6E` in dark mode, 2.93:1 on `#272727` (below 3:1, though decorative) | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#19](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/19) |
+| L10 | Low | Empty-state icons in the file list are `#6E6E6E` in dark mode, 2.93:1 on `#272727` (below 3:1, though decorative) | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#19](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/19) |
+| F1 | ✨ Feature | First launch always opens the demo folders; there is no step to choose a real project folder as the Default | 🟡 In progress | ⏳ |
+| F2 | ✨ Feature | No way to rename anything from inside the app | ⏳ Not started | |
 
 ---
 
@@ -1285,7 +1287,7 @@ After this change `#767676` is used only for the toggle-switch border, which nee
 | 📝 Proposal | ✅ | Below (option B) |
 | 🔧 Implementation | ✅ | 4 class changes in `FileGrid.tsx` |
 | ✅ Ready-to-close check | ✅ | All checks pass; see below |
-| 🏁 Closed | ⏳ | |
+| 🏁 Closed | ✅ | Merged in `a8a7161` |
 
 ### Problem
 
@@ -1323,4 +1325,54 @@ Option B: change the dark icon colour from `#6E6E6E` to `#8E8E8E` (4.56:1 on `#2
 | Screenshot, dark | ✅ The icon now reads at the same weight as in light mode and stays lighter than the description text |
 | Browser regression suite (production build) | ✅ L1 6, H1 13, H2 23, H3 14, M1 18, M2 24, M3 22, M4 16, M5 17, M6 7, L3 37, web-mode check. All unchanged, 0 failures |
 | `cargo test` | ➖ Not run; no Rust changes |
+
+---
+
+## F1 — Choose a project folder on first launch
+
+| Stage | Status | Notes |
+|-------|--------|-------|
+| 📋 Document | ✅ | This section |
+| 🔀 PR | ⏳ | |
+| 📝 Proposal | ✅ | Below (first-run picker, desktop and web; agreed 2026-11-28) |
+| 🔧 Implementation | ⏳ | |
+| ✅ Ready-to-close check | ⏳ | |
+| 🏁 Closed | ⏳ | |
+
+### Problem
+
+User request: "have the project folder be set. Currently it's in demo mode". A fresh install loads `DEFAULT_APP_CONFIG` (`src/data/demoWorkspace.ts`): three demo favorites with `fav_projects` as the Default. Using a real folder takes three manual steps (Add folder, pin, Set as Default) and nothing prompts for them, so a new user lands in demo data every time until they find those controls.
+
+Persisting a real Default already works (H1, H2): the desktop shell rescans saved roots and Chromium browsers reconnect stored handles. Only the first-run step is missing.
+
+### Proposal
+
+1. **Welcome screen** on first launch (no saved config) or after Reset: **Choose project folder** and **Try the demo**.
+2. **Choose project folder** opens the picker (desktop dialog, File System Access API, or `<input webkitdirectory>` fallback). The folder becomes a local favorite and the Default Folder; demo favorites are not added.
+3. **Try the demo** loads today's demo workspace and marks setup done.
+4. Saved configs from earlier versions count as set up, so existing users never see the welcome screen.
+5. Settings → **Reset Demo** becomes **Reset workspace** and returns to the welcome screen.
+6. `config.json` gets an optional `onboarded` boolean; files without it still import (treated as set up).
+
+### Out of scope
+
+- Removing demo data from the bundle.
+- F2 (rename), tracked separately.
+
+---
+
+## F2 — Rename from inside the app
+
+| Stage | Status | Notes |
+|-------|--------|-------|
+| 📋 Document | ✅ | This section |
+| 🔀 PR | ⏳ | Starts after F1 merges |
+| 📝 Proposal | ⏳ | |
+| 🔧 Implementation | ⏳ | |
+| ✅ Ready-to-close check | ⏳ | |
+| 🏁 Closed | ⏳ | |
+
+### Problem
+
+User request: "give the rename option within the app". Nothing in the app can be renamed today: pinned favorites keep the folder's name, and the context menu has no Rename action for files or folders.
 
