@@ -25,8 +25,8 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | M3 | 🟡 Medium | "Open Containing Folder" silently persists `includeSubfolders = false` | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#6](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/6) |
 | M4 | 🟡 Medium | Hidden-file detection differs between native and fallback pickers | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#7](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/7) |
 | M5 | 🟡 Medium | Single-token fuzzy search over-matches with no relevance ranking | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#8](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/8) |
-| M6 | 🟡 Medium | Grid keyboard scroll-sync: rapid ↓/↑ on a 2,500-row folder sometimes drops a key and throws React error #185 (update depth exceeded). Present since M2; seen in 2–3 of 8 runs of the M2 test, old and new code alike | ✅ Ready to close | [EoUReDIt/Folder-Scan-Viewer#9](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/9) |
-| L1 | Low | Unused AI Studio leftovers (`@google/genai`, `express`, `dotenv`, `motion`, `tsx`, Gemini `.env.example`, `metadata.json`); build tools in `dependencies` | ⏳ | — |
+| M6 | 🟡 Medium | Grid keyboard scroll-sync: rapid ↓/↑ on a 2,500-row folder sometimes drops a key and throws React error #185 (update depth exceeded). Present since M2; seen in 2–3 of 8 runs of the M2 test, old and new code alike | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#9](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/9) |
+| L1 | Low | Unused AI Studio leftovers (`@google/genai`, `express`, `dotenv`, `motion`, `tsx`, Gemini `.env.example`, `metadata.json`); build tools in `dependencies` | 🟡 In progress | (PR pending) |
 | L2 | Low | Removing a local favorite leaks its `localFolders` entry | ✅ Merged | [#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) (folded into H1) |
 | L3 | Low | Accessibility: rows not focusable, context menu lacks focus/arrow keys, settings modal lacks focus trap | ⏳ | — |
 | L4 | Low | `App.tsx` (879 lines) mixes favorites, mounting and shortcuts; extract hooks | ⏳ | — |
@@ -731,3 +731,49 @@ Scrolling with the mouse or wheel is not affected: it never mixes with sync keyb
 | M2 test, 8 runs in a row (was failing in 2–3 of 8) | ✅ 8/8 runs clean, 24/24 each |
 | H1 / H2 / H3 / M1 / M3 / M4 / M5 regressions, web check | ✅ 13/13 · 23/23 · 14/14 · 18/18 · 22/22 · 16/16 · 17/17 · 1/1 |
 | Light + dark screenshots | ✅ |
+
+---
+
+## L1 — Remove unused AI Studio leftovers; move build tools to devDependencies
+
+| Stage | Status | Notes |
+|-------|--------|-------|
+| 📋 Document | ✅ | This section |
+| 🔀 PR | ⏳ | |
+| 📝 Proposal | ✅ | See Proposal below |
+| 🔧 Implementation | ⏳ | |
+| ✅ Ready-to-close check | ⏳ | |
+
+### Problem
+
+The project was scaffolded in Google AI Studio, and its template is still in the repository even though Foldary uses none of it:
+
+| Leftover | Where | Used? |
+|----------|-------|-------|
+| `@google/genai` | `dependencies` | No import anywhere |
+| `express`, `@types/express` | `dependencies`, `devDependencies` | No server; the `clean` script still deletes a `server.js` that never exists |
+| `dotenv` | `dependencies` | No import |
+| `motion` | `dependencies` | No import |
+| `tsx` | `devDependencies` | No script runs it |
+| `autoprefixer` | `devDependencies` | No PostCSS config; Tailwind v4 runs through `@tailwindcss/vite` |
+| `esbuild` | `devDependencies` | Not imported; Vite 8 builds with Rolldown and only lists esbuild as an optional peer |
+| `.env.example` | repo root | Describes `GEMINI_API_KEY` and `APP_URL`, which nothing reads |
+| `metadata.json` | repo root | AI Studio app manifest that claims `MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API` |
+
+`vite`, `@vitejs/plugin-react` and `@tailwindcss/vite` are build tools but sit in `dependencies`. The app ships as a static bundle (web) or inside the Tauri binary, so nothing needs them at run time.
+
+Effect: a slower `npm install` with about a dozen unused packages, a misleading picture of what the app does (Gemini, a server, API keys), and a larger audit surface.
+
+### Proposal
+
+1. **Remove unused packages**: `@google/genai`, `express`, `@types/express`, `dotenv`, `motion`, `tsx`, `autoprefixer`, `esbuild`. Regenerate `package-lock.json` with `npm install`.
+2. **Move build tools** `vite`, `@vitejs/plugin-react` and `@tailwindcss/vite` to `devDependencies`. `npm ci` in the release workflow still installs them.
+3. **Delete** `.env.example` and `metadata.json`, and drop the `!.env.example` exception from `.gitignore` (`.env*` stays ignored).
+4. **Fix the `clean` script** to `rm -rf dist`.
+5. **Reword the `vite.config.ts` comment** on the asset-copy plugin. The plugin stays, because the demo workspace loads its images from `/src/assets/images/…`; the comment should say that rather than mention AI Studio's `generate_image`.
+6. **Verify**: `npm run lint` and `npm run build` pass; the production build loads with the demo images visible and no console errors; the H1–M6 regression tests still pass; `npm ls` shows no missing peers.
+
+### Out of scope
+
+- The `DISABLE_HMR` switch in `vite.config.ts`. It is off unless the variable is set, costs nothing, and still matters if the project is ever edited in AI Studio again.
+- The `@/*` path alias in `vite.config.ts` and `tsconfig.json`. It is unused, but it is ordinary project config rather than an AI Studio leftover.
