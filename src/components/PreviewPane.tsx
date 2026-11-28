@@ -130,7 +130,7 @@ export function PreviewPane({
   return (
     <aside
       aria-label="Quick File Preview"
-      className="w-[316px] shrink-0 h-full overflow-y-auto bg-[#F9F9F9] dark:bg-[#222222] border-l border-[#E5E5E5] dark:border-[#383838] flex flex-col"
+      className="w-[316px] shrink-0 h-full overflow-y-auto bg-[#F9F9F9] dark:bg-[#2C2C2C] border-l border-[#E5E5E5] dark:border-[#383838] flex flex-col"
     >
       {/* Header */}
       <div className="h-[42px] px-4 shrink-0 flex items-center justify-between border-b border-[#E5E5E5] dark:border-[#383838]">
@@ -179,7 +179,7 @@ export function PreviewPane({
           </div>
 
           {/* Preview Canvas */}
-          <div className="rounded-lg border border-[#E5E5E5] dark:border-[#3A3A3A] bg-white dark:bg-[#2A2A2A] overflow-hidden">
+          <div className="rounded-lg border border-[#E5E5E5] dark:border-[#3A3A3A] bg-white dark:bg-[#272727] overflow-hidden">
             {entry.category === 'picture' && activeImageSrc && !imageError ? (
               <div className="bg-[#F3F3F3] dark:bg-[#1C1C1C] flex items-center justify-center p-2">
                 <img
