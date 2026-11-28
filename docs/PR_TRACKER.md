@@ -29,8 +29,8 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | L1 | Low | Unused AI Studio leftovers (`@google/genai`, `express`, `dotenv`, `motion`, `tsx`, Gemini `.env.example`, `metadata.json`); build tools in `dependencies` | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#10](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/10) |
 | L2 | Low | Removing a local favorite leaks its `localFolders` entry | ✅ Merged | [#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) (folded into H1) |
 | L3 | Low | Accessibility: rows not focusable, context menu lacks focus/arrow keys, settings modal lacks focus trap | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#11](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/11) |
-| L4 | Low | `App.tsx` (879 lines at review, 1,235 now) mixes favorites, mounting and shortcuts; extract hooks | ✅ Ready to close | [#12](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/12) |
-| L5 | Low | No tests; no CI on push/PR; version-bump commit is pushed before the installer build succeeds | ⏳ | — |
+| L4 | Low | `App.tsx` (879 lines at review, 1,235 now) mixes favorites, mounting and shortcuts; extract hooks | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#12](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/12) |
+| L5 | Low | No tests; no CI on push/PR; version-bump commit is pushed before the installer build succeeds | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#13](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/13) |
 | L6 | Low | `bump-version.mjs` doesn't update `package-lock.json` (fixed manually in `e918ec6`) | ⏳ | — |
 | L7 | Low | Preview pane dark background `#222222` drifts from documented tokens | ⏳ | — |
 
@@ -881,7 +881,7 @@ Effect: a slower `npm install` with about a dozen unused packages, a misleading 
 | 📝 Proposal | ✅ | See Proposal below |
 | 🔧 Implementation | ✅ | See Implementation below |
 | ✅ Ready-to-close check | ✅ | See Ready to close below |
-| 🏁 Closed | ⏳ | |
+| 🏁 Closed | ✅ | Merged 2026-11-28 (`020c3b6`) |
 
 ### Problem
 
@@ -961,3 +961,79 @@ A behaviour-preserving refactor. No UI, `config.json` or storage changes.
 - Splitting `SettingsModal.tsx` or `FileGrid.tsx`.
 - State libraries (Redux, Zustand) or context providers. Plain hooks are enough at this size.
 - Unit tests for the new hooks. These belong to L5, which this refactor makes possible.
+
+---
+
+## L5 — Unit tests, CI on push and PR, and a safe release order
+
+| Stage | Status | Notes |
+|-------|--------|-------|
+| 📋 Document | ✅ | This section |
+| 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#13](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/13) |
+| 📝 Proposal | ✅ | See Proposal below |
+| 🔧 Implementation | ✅ | See Implementation below |
+| ✅ Ready-to-close check | ✅ | See Ready to close below |
+| 🏁 Closed | ⏳ | |
+
+### Problem
+
+| Gap | Today |
+|-----|-------|
+| No JavaScript tests | `package.json` has no `test` script and no test runner. The services (`fileProvider`, `configStorage`, `startup`) are pure functions that every fix since H1 has touched, yet nothing checks them. The browser regression scripts used for H1–L4 live outside the repository. |
+| Rust tests never run automatically | `src-tauri/src/roots.rs` and `scan.rs` have 10 unit tests (allowlist, `..` traversal, hidden files, scan limits). Only a person running `cargo test` by hand sees them. |
+| No CI on push or pull request | The only workflow, `.github/workflows/release.yml`, runs on `workflow_dispatch`. A pull request can merge with a type error, a broken build or a failing Rust test. |
+| Release pushes the version bump first | Job `prepare_version` commits `chore(release): prepare vX` and **pushes it to the branch** before job `build_and_release_windows` has run `npm run lint` or the Tauri build. If the Windows build fails, the branch keeps a bump commit with no tag and no release. Running the workflow again with `patch` bumps a second time, so a version number is skipped. |
+| Checks run late | `npm run lint` only runs inside the Windows job, after the push. `npm run build` and `cargo test` never run in the release workflow (the Tauri build compiles but does not test). |
+
+### Proposal
+
+1. **Unit tests with Vitest**
+   - Add `vitest` as a dev dependency and `"test": "vitest run"` to `package.json`. Vitest reads `vite.config.ts`, so no second config.
+   - `src/services/*.test.ts` covering:
+     - `fileProvider`: categories, query match tiers and ranking (M5), recency, scope and rebase to a subpath (M3, L4), sort with folders first, category counts, hidden paths (M4), `convertFileListToEntries` limits and skipped folders (M2), `rollUpFolderDates` (M1).
+     - `configStorage`: `validateAndNormalizeConfig` with bad and legacy input, and an export → import round trip that keeps `sourceType` (H3).
+     - `startup`: `getInitialFolder` and `getStartupSort` in `per_folder` and `global` modes.
+   - `scripts/bump-version.test.mjs` for `computeNextVersion` (patch, minor, major, custom with a `v` prefix, none, bad input). The script exports the function and only runs `main()` when called directly.
+   - Hooks stay covered by the browser suite. Testing them in isolation needs jsdom and Testing Library; that can follow once there is a reason.
+2. **CI workflow** `.github/workflows/ci.yml`, on push to `main` and on every pull request:
+   - `web` job (Ubuntu): `npm ci`, `npm run lint`, `npm test`, `npm run build`.
+   - `rust` job (Ubuntu): install the Tauri Linux libraries (WebKitGTK 4.1, librsvg, AppIndicator), then `cargo test` in `src-tauri/` with the Rust cache.
+   - Read-only `contents` permission; a newer push to the same branch cancels the older run.
+3. **Release order** in `release.yml`:
+   - `prepare_version` runs lint, tests and build first, computes the next version and checks the tag, but **does not push**. In `version_bump_only` mode it commits and pushes here, after the checks pass, because there is nothing else to wait for.
+   - `build_windows` checks out the same starting commit, applies the same bump locally, runs `cargo test`, builds the installer and uploads it as a workflow artifact.
+   - A new `publish` job runs only if the build succeeds: it applies the bump, commits, pushes, and creates the tag and release on that commit from the uploaded artifact.
+   - If the build fails, nothing reaches the branch and the same run can be retried without skipping a version. If someone pushes to the branch during the build, the push is rejected and the release stops before a tag exists.
+4. **Verify**: `npm test` passes locally; `npm run lint`, `npm run build` and `cargo test` pass; the browser regression suite is unchanged; both workflows parse as valid YAML with the expected jobs and `needs`; `bump-version.mjs` still works from the command line.
+
+### Implementation
+
+| Change | Files |
+|--------|-------|
+| Vitest 5 dev dependency; `npm test` runs `vitest run` and reuses `vite.config.ts` | `package.json`, `package-lock.json` |
+| 30 service tests: extensions, categories and sizes; search tiers, fuzzy fallback and ranking (M5); recency; scope and rebase (M3, L4); folders-first, numeric name, size and date sort; kind, recency and hidden filters; counts equal the grid; folder date roll-up (M1); hidden dot paths (M4); browser picker root strip, `node_modules`/`.git` skip, depth and entry limits (M2); config validation, defaults, legacy `sourceType` inference and export → import round trip (H3); startup folder and sort | `src/services/fileProvider.test.ts`, `configStorage.test.ts`, `startup.test.ts`, `src/test/entries.ts` |
+| `computeNextVersion` is exported and `main()` only runs when the file is called as a script; 4 tests cover patch, minor, major, none, custom (with `v` prefix) and bad input | `scripts/bump-version.mjs`, `scripts/bump-version.test.mjs` |
+| CI on push to `main` and every PR: `web` job (lint, test, build) and `rust` job (Tauri Linux libraries, `cargo test --locked`). Read-only permissions; a newer push cancels the older run | `.github/workflows/ci.yml` |
+| Release reordered into three jobs. `prepare_version` runs lint, tests and build, computes the version and checks the tag and ref, and pushes only in `version_bump_only` mode. `build_windows` applies the same bump locally on the starting commit, checks the version matches, runs `cargo test`, builds and uploads the installer. `publish` runs only after a successful build: it re-applies the bump, refuses if the tag appeared meanwhile, pushes fast-forward only, then creates the tag and release from the uploaded installer | `.github/workflows/release.yml` |
+| Commands, test locations and checklist updated | `AGENTS.md` |
+
+### Ready to close
+
+| Check | Result |
+|-------|--------|
+| `npm run lint` | ✅ 0 errors |
+| `npm test` | ✅ 4 files, 34 tests. A deliberately broken `resolveSourceType` fails 3 of them, so the tests catch real regressions |
+| `npm run build` | ✅ JS bundle unchanged at 331.9 kB; no test code in `dist/` |
+| `cargo test` | ✅ 10/10, also with no `dist/` folder (as in the CI `rust` job) |
+| Workflows | ✅ Both parse; `release.yml` jobs are `prepare_version` → `build_windows` → `publish` with the expected `needs` and `if` |
+| Release `publish` step, run locally against a scratch git remote with a stub `gh` | ✅ Bump commit pushed, then release created on that commit with both assets and correct notes. ✅ Branch moved during build → push rejected, no release. ✅ Tag created during build → stops before pushing |
+| `bump-version.mjs` from the command line | ✅ `--type minor` updates all four files; a bad `--custom` exits 1 |
+| Browser regression suite (production build) | ✅ L1 6, H1 13, H2 23, H3 14, M1 18, M2 24, M3 22, M4 16, M5 17, M6 7, L3 37, web-mode check. All unchanged, 0 failures |
+| Not verified here | 🟡 The workflows have not run on GitHub yet. CI runs on this PR; the release workflow only runs when started by hand |
+
+### Out of scope
+
+- Hook and component tests with jsdom and Testing Library.
+- Moving the browser regression scripts into the repository (they need a running preview server and Playwright).
+- Code coverage thresholds.
+- `package-lock.json` in the version bump (L6).
