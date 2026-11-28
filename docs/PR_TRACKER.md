@@ -38,6 +38,7 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | L10 | Low | Empty-state icons in the file list are `#6E6E6E` in dark mode, 2.93:1 on `#272727` (below 3:1, though decorative) | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#19](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/19) |
 | F1 | ✨ Feature | First launch always opens the demo folders; there is no step to choose a real project folder as the Default | 🟡 In progress | ⏳ |
 | F2 | ✨ Feature | No way to rename anything from inside the app | ⏳ Not started | |
+| F3 | ✨ Feature | No manual refresh: changes on disk only show after reconnecting or restarting | ⏳ Not started | |
 
 ---
 
@@ -1375,4 +1376,21 @@ Persisting a real Default already works (H1, H2): the desktop shell rescans save
 ### Problem
 
 User request: "give the rename option within the app". Nothing in the app can be renamed today: pinned favorites keep the folder's name, and the context menu has no Rename action for files or folders.
+
+---
+
+## F3 — Manual refresh button
+
+| Stage | Status | Notes |
+|-------|--------|-------|
+| 📋 Document | ✅ | This section |
+| 🔀 PR | ⏳ | Starts after F2 merges |
+| 📝 Proposal | ⏳ | |
+| 🔧 Implementation | ⏳ | |
+| ✅ Ready-to-close check | ⏳ | |
+| 🏁 Closed | ⏳ | |
+
+### Problem
+
+User request: "a manual refresh button". A local folder is scanned once, when it is mounted or reconnected. Files added, removed or changed on disk afterwards don't appear until the folder is reconnected or the app restarts, and there is no button to rescan it.
 
