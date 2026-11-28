@@ -203,7 +203,7 @@ export function FileGrid({
           >
             <CornerLeftUp className="w-3.5 h-3.5" />
             <span>Up to parent folder</span>
-            <span className="font-mono text-[11px] text-[#767676] dark:text-[#8E8E8E]">
+            <span className="font-mono text-[11px] text-[#5C5C5C] dark:text-[#A6A6A6]">
               (Backspace)
             </span>
           </button>

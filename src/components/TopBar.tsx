@@ -274,7 +274,7 @@ export function TopBar({
           onChange={(e) => onSearchChange(e.target.value)}
           placeholder={`Search in ${activeLeafName}...`}
           aria-label={`Search in ${activeLeafName}`}
-          className="w-full h-8 pl-8 pr-16 rounded-md text-[13px] bg-white dark:bg-[#2C2C2C] text-[#1A1A1A] dark:text-[#F3F3F3] placeholder:text-[#767676] dark:placeholder:text-[#8E8E8E] border border-[#E0E0E0] dark:border-[#3E3E3E] border-b-[#B8B8B8] dark:border-b-[#555555] focus:outline-none focus:border-[#0067C0] dark:focus:border-[#60CDFF] focus:border-b-2 transition-colors"
+          className="w-full h-8 pl-8 pr-16 rounded-md text-[13px] bg-white dark:bg-[#2C2C2C] text-[#1A1A1A] dark:text-[#F3F3F3] placeholder:text-[#5C5C5C] dark:placeholder:text-[#A6A6A6] border border-[#E0E0E0] dark:border-[#3E3E3E] border-b-[#B8B8B8] dark:border-b-[#555555] focus:outline-none focus:border-[#0067C0] dark:focus:border-[#60CDFF] focus:border-b-2 transition-colors"
         />
         {searchQuery ? (
           <button
@@ -286,7 +286,7 @@ export function TopBar({
             <X className="w-3.5 h-3.5" />
           </button>
         ) : (
-          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 font-mono text-[11px] text-[#767676] dark:text-[#8E8E8E] hidden sm:inline">
+          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 font-mono text-[11px] text-[#5C5C5C] dark:text-[#A6A6A6] hidden sm:inline">
             Ctrl+K
           </span>
         )}
