@@ -5,6 +5,7 @@
  *   - src-tauri/tauri.conf.json
  *   - src-tauri/Cargo.toml
  *   - src-tauri/Cargo.lock (when present)
+ *   - package-lock.json (when present)
  *
  * Usage:
  *   node scripts/bump-version.mjs --type <patch|minor|major|custom|none> [--custom 2.0.0] [--github-output]
@@ -103,12 +104,35 @@ function updateCargoLockVersion(filePath, nextVersion) {
   return true;
 }
 
+/**
+ * npm keeps the project's own version in two places in package-lock.json:
+ * the top-level "version" and packages[""].version.
+ */
+export function updatePackageLockVersion(filePath, nextVersion) {
+  if (!fs.existsSync(filePath)) return false;
+  const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  let changed = false;
+  if (parsed.version !== nextVersion) {
+    parsed.version = nextVersion;
+    changed = true;
+  }
+  const rootPackage = parsed.packages?.[''];
+  if (rootPackage && rootPackage.version !== nextVersion) {
+    rootPackage.version = nextVersion;
+    changed = true;
+  }
+  if (!changed) return false;
+  fs.writeFileSync(filePath, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8');
+  return true;
+}
+
 function main() {
   const { type, custom, githubOutput } = parseArgs(process.argv.slice(2));
   const pkgPath = path.join(rootDir, 'package.json');
   const tauriConfPath = path.join(rootDir, 'src-tauri', 'tauri.conf.json');
   const cargoTomlPath = path.join(rootDir, 'src-tauri', 'Cargo.toml');
   const cargoLockPath = path.join(rootDir, 'src-tauri', 'Cargo.lock');
+  const packageLockPath = path.join(rootDir, 'package-lock.json');
 
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
   const previousVersion = String(pkg.version || '1.0.0');
@@ -118,7 +142,9 @@ function main() {
   const changedTauri = updateJsonVersion(tauriConfPath, nextVersion);
   const changedCargo = updateCargoTomlVersion(cargoTomlPath, nextVersion);
   const changedLock = updateCargoLockVersion(cargoLockPath, nextVersion);
-  const changed = changedPkg || changedTauri || changedCargo || changedLock;
+  const changedPackageLock = updatePackageLockVersion(packageLockPath, nextVersion);
+  const changed =
+    changedPkg || changedTauri || changedCargo || changedLock || changedPackageLock;
 
   console.log(`Foldary version: ${previousVersion} -> ${nextVersion} (changed: ${changed})`);
 
@@ -132,7 +158,7 @@ function main() {
   }
 }
 
-// Run only when called as a script, so tests can import computeNextVersion
+// Run only when called as a script, so tests can import the helpers
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     main();
