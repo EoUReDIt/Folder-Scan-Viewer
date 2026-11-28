@@ -23,7 +23,7 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | M1 | 🟡 Medium | Native-picker folders get `dateModified: Date.now()`; skews recency filter and Recent sort | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#4](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/4) |
 | M2 | 🟡 Medium | Scan cap (2,500) leaks; fallback picker has no cap or `node_modules`/`.git` skip; no grid virtualization | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#5](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/5) |
 | M3 | 🟡 Medium | "Open Containing Folder" silently persists `includeSubfolders = false` | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#6](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/6) |
-| M4 | 🟡 Medium | Hidden-file detection differs between native and fallback pickers | 🟡 In progress | (PR pending) |
+| M4 | 🟡 Medium | Hidden-file detection differs between native and fallback pickers | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#7](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/7) |
 | M5 | 🟡 Medium | Single-token fuzzy search over-matches with no relevance ranking | ⏳ | — |
 | L1 | Low | Unused AI Studio leftovers (`@google/genai`, `express`, `dotenv`, `motion`, `tsx`, Gemini `.env.example`, `metadata.json`); build tools in `dependencies` | ⏳ | — |
 | L2 | Low | Removing a local favorite leaks its `localFolders` entry | ✅ Merged | [#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) (folded into H1) |
@@ -501,10 +501,10 @@ One addition to the proposal: the `FileGrid.tsx` dependency change. Without it, 
 | Stage | Status | Notes |
 |-------|--------|-------|
 | 📋 Document | ✅ | This section |
-| 🔀 PR | ⏳ | |
+| 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#7](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/7) |
 | 📝 Proposal | ✅ | See Proposal below |
-| 🔧 Implementation | ⏳ | |
-| ✅ Ready-to-close check | ⏳ | |
+| 🔧 Implementation | ✅ | See Implementation below |
+| ✅ Ready-to-close check | ✅ | Ready, pending the owner's merge |
 | 🏁 Closed | ⏳ | |
 
 ### Problem
@@ -546,4 +546,25 @@ The Windows *Hidden* attribute cannot be read from a browser: neither `File` nor
 - Reading the Windows *Hidden* attribute in web mode. No browser API exposes it.
 - Changing what the desktop scan treats as hidden.
 - A user-defined hide list, such as `Thumbs.db` or `desktop.ini`.
+
+### Implementation
+
+| Area | Files | What changed |
+|------|-------|--------------|
+| Shared rule | `src/services/fileProvider.ts` | New `isHiddenEntryPath(entryPath)`: true when any path segment starts with `.` |
+| Folder-handle scan | `src/services/fileProvider.ts` | `scanDirectoryHandle` uses the helper on the entry path, for folders and files |
+| Fallback picker | `src/services/fileProvider.ts` | `convertFileListToEntries` uses the helper for files and in `ensureFolder` (on the folder path built so far) |
+| Desktop note | `src-tauri/src/scan.rs` | Comment only: browsers cannot read the Windows attribute, so web mode uses the dot rule alone. No behavior change |
+
+### Ready-to-close check
+
+| Check | Result |
+|-------|--------|
+| `npm run lint` | ✅ |
+| `npm run build` | ✅ |
+| `cargo test` | ✅ 10/10 (unchanged) |
+| Same M4 test on the code before the fix | ❌ 9 failures, as described in Problem: the folder-handle picker leaked `settings.json`, `nested` and `deep.txt`; the fallback picker leaked `nested` |
+| Playwright, both pickers on the same tree: hidden off lists exactly the 5 visible items with sidebar *All* = 5; hidden on lists all 11 with *All* = 11; exactly the hidden entries are dimmed; both pickers give the same sets | ✅ 16/16 |
+| H1 / H2 / H3 / M1 / M2 / M3 regressions, web check | ✅ 13/13 · 23/23 · 14/14 · 18/18 · 24/24 · 22/22 · 1/1 |
+| Light + dark screenshots | ✅ |
 
