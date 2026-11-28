@@ -28,7 +28,7 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | M6 | 🟡 Medium | Grid keyboard scroll-sync: rapid ↓/↑ on a 2,500-row folder sometimes drops a key and throws React error #185 (update depth exceeded). Present since M2; seen in 2–3 of 8 runs of the M2 test, old and new code alike | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#9](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/9) |
 | L1 | Low | Unused AI Studio leftovers (`@google/genai`, `express`, `dotenv`, `motion`, `tsx`, Gemini `.env.example`, `metadata.json`); build tools in `dependencies` | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#10](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/10) |
 | L2 | Low | Removing a local favorite leaks its `localFolders` entry | ✅ Merged | [#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) (folded into H1) |
-| L3 | Low | Accessibility: rows not focusable, context menu lacks focus/arrow keys, settings modal lacks focus trap | 🟡 In progress | (PR pending) |
+| L3 | Low | Accessibility: rows not focusable, context menu lacks focus/arrow keys, settings modal lacks focus trap | ✅ Ready to close | [#11](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/11) |
 | L4 | Low | `App.tsx` (879 lines) mixes favorites, mounting and shortcuts; extract hooks | ⏳ | — |
 | L5 | Low | No tests; no CI on push/PR; version-bump commit is pushed before the installer build succeeds | ⏳ | — |
 | L6 | Low | `bump-version.mjs` doesn't update `package-lock.json` (fixed manually in `e918ec6`) | ⏳ | — |
@@ -806,10 +806,10 @@ Effect: a slower `npm install` with about a dozen unused packages, a misleading 
 | Stage | Status | Notes |
 |-------|--------|-------|
 | 📋 Document | ✅ | This section |
-| 🔀 PR | ⏳ | |
+| 🔀 PR | ✅ | [#11](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/11) |
 | 📝 Proposal | ✅ | See Proposal below |
-| 🔧 Implementation | ⏳ | |
-| ✅ Ready-to-close check | ⏳ | |
+| 🔧 Implementation | ✅ | See Implementation below |
+| ✅ Ready-to-close check | ✅ | See Ready to close below |
 | 🏁 Closed | ⏳ | |
 
 ### Problem
@@ -828,7 +828,7 @@ Effect: a slower `npm install` with about a dozen unused packages, a misleading 
    - The global ↑/↓/Enter/Space/Backspace shortcuts stay as they are, so the search box keeps driving the grid.
 2. **Keyboard-operable context menu**
    - With the grid focused, **Shift+F10** or the **Menu** key opens the menu for the selected row, anchored to that row.
-   - On open, focus moves to the first item. ↑/↓ move between items and wrap; Home/End jump to the ends; Enter/Space activate; Esc and Tab close. Items use a roving `tabIndex`, and separators get `role="separator"`. The menu is labelled "Actions for <name>".
+   - On open, focus moves to the first item. ↑/↓ move between items and wrap; Home/End jump to the ends; Enter/Space activate; Esc and Tab close. Items are `tabIndex={-1}` and the menu moves focus itself (Tab closes it, so the menu is never a Tab stop), and separators get `role="separator"`. The menu is labelled "Actions for <name>".
    - While the menu is open, the global grid shortcuts are suspended.
    - On close, focus goes back to where it was before the menu opened.
 3. **Settings modal focus management**
@@ -845,6 +845,25 @@ Effect: a slower `npm install` with about a dozen unused packages, a misleading 
      - the settings dialog takes focus, traps Tab both ways and returns focus on close
      - tab arrows switch panels
    - The H1–M6 and L1 regression tests pass, and light and dark screenshots show the focus ring.
+
+### Implementation
+
+| File | Change |
+|------|--------|
+| `src/components/FileGrid.tsx` | `<table role="grid" tabIndex={0}>` with `aria-label` ("Files in <folder>") and `aria-activedescendant` set to the selected row's `id` (`foldary-row-<index>`) only while that row is rendered. Shift+F10 / Menu key on the grid calls the new `onContextMenuRow` prop, anchored under the selected row. The selected row gets a `group-focus-visible` 2px outline (`#0067C0` / `#60CDFF`) |
+| `src/App.tsx` | The global key handler returns early while the settings dialog or the context menu is open, so ↑/↓/Esc there no longer move the grid or clear search. Passes `gridLabel` and `onContextMenuRow` (selects the row, then opens the menu) |
+| `src/components/ContextMenu.tsx` | Focus moves to the first item on open and returns to the opener on close. ↑/↓ wrap, Home/End jump, Tab closes. Items are `tabIndex={-1}` with a `focus:` background in both themes; the menu is labelled "Actions for <name>", the header is `aria-hidden`, and separators have `role="separator"` |
+| `src/components/SettingsModal.tsx` | `role="dialog"` moved to the panel, which takes focus on open. Tab/Shift+Tab cycle inside it (keydown plus a `focusin` guard), and focus returns to the opener on close. Tabs use `tablist`/`tab`/`tabpanel` with `aria-selected`, `aria-controls` and a single Tab stop; ←/→/Home/End switch tabs. The shortcuts list gains "Shift + F10 / Menu" |
+
+### Ready to close
+
+| Check | Result |
+|-------|--------|
+| `npm run lint` | ✅ 0 errors |
+| `npm run build` | ✅ |
+| L3 Playwright test (production build) | ✅ 37/37: Tab reaches grid, `aria-activedescendant` follows ↑/↓, focus outline, Shift+F10 and Menu key open the menu anchored to the row with focus on the first item, wrap/Home/End, ↑/↓ in menu leave the selection alone, Esc and Tab return focus to the grid, Enter activates, right-click menu takes focus, dialog takes focus, Tab/Shift+Tab ×40 stay inside, ←/→ switch tabs and panel, Esc returns focus to the Settings button, no page errors |
+| Regression tests | ✅ L1 6, H1 13, H2 23, H3 14, M1 18, M2 24, M3 22, M4 16, M5 17, M6 7. H2/H3/M3 now find settings tabs by `role="tab"` instead of `button`; M1's on-disk fixture timestamps were refreshed |
+| Light and dark screenshots | ✅ Menu focus highlight and tab focus ring visible in both themes |
 
 ### Out of scope
 
