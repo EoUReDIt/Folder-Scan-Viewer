@@ -139,8 +139,8 @@ export function FileGrid({
     } else if (rowBottom > container.scrollTop + container.clientHeight) {
       container.scrollTop = rowBottom - container.clientHeight;
     }
-    // Only follow selection changes, not every re-sort or filter keystroke
-  }, [selectedId]);
+    // Follow selection and folder changes, not every re-sort or filter keystroke
+  }, [selectedId, currentSubpath]);
 
   const virtualized = entries.length > VIRTUALIZE_AFTER;
   let start = 0;

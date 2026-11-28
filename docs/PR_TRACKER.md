@@ -22,7 +22,7 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | H3 | 🔴 High | `config.json` export drops `sourceType`; re-imported local favorites become empty demo folders | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#2](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/2) |
 | M1 | 🟡 Medium | Native-picker folders get `dateModified: Date.now()`; skews recency filter and Recent sort | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#4](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/4) |
 | M2 | 🟡 Medium | Scan cap (2,500) leaks; fallback picker has no cap or `node_modules`/`.git` skip; no grid virtualization | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#5](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/5) |
-| M3 | 🟡 Medium | "Open Containing Folder" silently persists `includeSubfolders = false` | 🟡 In progress | (PR pending) |
+| M3 | 🟡 Medium | "Open Containing Folder" silently persists `includeSubfolders = false` | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#6](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/6) |
 | M4 | 🟡 Medium | Hidden-file detection differs between native and fallback pickers | ⏳ | — |
 | M5 | 🟡 Medium | Single-token fuzzy search over-matches with no relevance ranking | ⏳ | — |
 | L1 | Low | Unused AI Studio leftovers (`@google/genai`, `express`, `dotenv`, `motion`, `tsx`, Gemini `.env.example`, `metadata.json`); build tools in `dependencies` | ⏳ | — |
@@ -426,10 +426,10 @@ One deviation from the proposal: the fallback picker also lists in-range folders
 | Stage | Status | Notes |
 |-------|--------|-------|
 | 📋 Document | ✅ | This section |
-| 🔀 PR | ⏳ | |
+| 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#6](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/6) |
 | 📝 Proposal | ✅ | See Proposal below |
-| 🔧 Implementation | ⏳ | |
-| ✅ Ready-to-close check | ⏳ | |
+| 🔧 Implementation | ✅ | See Implementation below |
+| ✅ Ready-to-close check | ✅ | Ready, pending the owner's merge |
 | 🏁 Closed | ⏳ | |
 
 ### Problem
@@ -470,3 +470,28 @@ The context-menu action *Open Containing Folder* (`src/App.tsx`, `onOpenContaini
 **Out of scope**:
 - A per-folder saved scope.
 - Other context-menu actions.
+
+### Implementation
+
+| Area | Files | What changed |
+|------|-------|--------------|
+| Temporary scope | `src/App.tsx` | New session-only `scopeOverride { folderId, subpath }`. The scope in use is `config.includeSubfolders && !scopeOverrideActive`, and it feeds `filterAndSortEntries`, `computeCategoryCounts`, `Sidebar` and `SortToolbar`. An effect clears the override as soon as the folder or subpath no longer matches |
+| Scope toggles | `src/App.tsx` | New `handleToggleIncludeSubfolders`, shared by the sidebar switch and the toolbar button. It flips the scope in use, clears the override and saves, as before |
+| Open Containing Folder | `src/App.tsx`, `src/components/ContextMenu.tsx` | The callback receives the whole entry. It navigates, sets the override only when subfolders are on, selects the file and shows `Showing "<folder>" only`. It no longer calls `setConfig` |
+| Selection scroll | `src/components/FileGrid.tsx` | The scroll-to-selection effect also runs when `currentSubpath` changes, so the file picked by the action is scrolled into view in the new folder |
+
+One addition to the proposal: the `FileGrid.tsx` dependency change. Without it, the selected file would not scroll into view when its id was already selected before the folder changed.
+
+### Ready-to-close check
+
+| Check | Result |
+|-------|--------|
+| `npm run lint` | ✅ |
+| `npm run build` | ✅ |
+| Playwright: the action opens the folder, shows *Current Folder Only*, turns the sidebar switch off, selects the file and names the folder in the toast | ✅ |
+| Saved `includeSubfolders` and exported `config.json` stay `true` after the action | ✅ |
+| Scope comes back after Backspace, the breadcrumb, switching favorite and reload. Re-entering the folder does not bring the override back | ✅ |
+| Toolbar button and sidebar switch each restore subfolders in one click and save it | ✅ |
+| With subfolders off, the action keeps *Current Folder Only*, and it stays off after navigating | ✅ 22/22 total |
+| H1 / H2 / H3 / M1 / M2 regressions, web check | ✅ 13/13 · 23/23 · 14/14 · 18/18 · 24/24 · 1/1 |
+| Light + dark screenshots | ✅ |
