@@ -38,7 +38,8 @@ Keep UI components strictly decoupled from filesystem and persistence adapters s
   - `FileGrid.tsx` — High-density sortable table (`38px` rows), keyboard scroll sync, double-click drill-in/preview, and empty states.
   - `PreviewPane.tsx` — Collapsible right-hand inspector supporting generated/local image previews, text/code snippets, folder summaries, media/archive cards, and metadata.
   - `ContextMenu.tsx` — Viewport-clamped right-click menu for folder and file actions.
-  - `SettingsModal.tsx` — Startup sort mode (`per_folder` vs. `global`), global sort defaults, per-folder sort overview, live `config.json` import/export, and keyboard shortcuts reference.
+  - `SettingsModal.tsx` — Startup sort mode (`per_folder` vs. `global`), global sort defaults, per-folder sort overview, live `config.json` import/export, Reset workspace, and keyboard shortcuts reference.
+  - `WelcomeScreen.tsx` — First-run screen (shown while `config.onboarded` is `false`): **Choose project folder** mounts a local folder as the only favorite and Default Folder; **Try the demo** keeps the demo workspace.
   - `FileIcon.tsx` & `ToastContainer.tsx` — Semantic file icons and non-blocking action notifications.
 - `src/services/startup.ts` — Startup folder and startup sort rules (`getInitialFolder`, `getStartupSort`).
 - `src/hooks/` — App state split by concern: `useToasts`, `useAppConfig` (persistence + dark class), `useFolderNavigation` (active folder, subpath, sort), `useLocalFolders` (runtime store of local favorites), `useFolderMounting` (add / choose again / reconnect), `useFavorites` (pin, remove, Default), `useKeyboardShortcuts`, `useFileActions`. Hooks own app state and may call `src/services/`. Components get state and actions as props and never import from `src/hooks/`. Hooks get their inputs as arguments rather than reading another hook's state.

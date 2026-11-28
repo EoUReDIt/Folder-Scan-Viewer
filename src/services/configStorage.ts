@@ -64,6 +64,7 @@ export function exportConfigJsonString(config: AppConfig): string {
     includeSubfolders: config.includeSubfolders,
     showHiddenFiles: config.showHiddenFiles,
     theme: config.theme,
+    onboarded: config.onboarded,
     favorites: config.favorites.map((fav) => ({
       id: fav.id,
       name: fav.name,
@@ -184,6 +185,8 @@ export function validateAndNormalizeConfig(
       showHiddenFiles:
         typeof obj.showHiddenFiles === 'boolean' ? obj.showHiddenFiles : false,
       theme: obj.theme === 'dark' ? 'dark' : 'light',
+      // Configs saved or exported before first-run setup existed belong to set-up users
+      onboarded: typeof obj.onboarded === 'boolean' ? obj.onboarded : true,
       favorites: normalizedFavorites,
     },
   };

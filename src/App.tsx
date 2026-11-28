@@ -32,6 +32,8 @@ import { PreviewPane } from './components/PreviewPane';
 import { ContextMenu } from './components/ContextMenu';
 import { SettingsModal } from './components/SettingsModal';
 import { ToastContainer } from './components/ToastContainer';
+import { WelcomeScreen } from './components/WelcomeScreen';
+import { NATIVE_SHELL } from './hooks/useLocalFolders';
 
 export default function App() {
   const [demoWorkspace] = useState<Record<string, FileEntry[]>>(() => buildDemoWorkspace());
@@ -199,8 +201,14 @@ export default function App() {
     setConfig(DEFAULT_APP_CONFIG);
     openFolder(getInitialFolder(DEFAULT_APP_CONFIG), DEFAULT_APP_CONFIG);
     handleResetFilters();
-    notify('Workspace reset to default demo state', 'info');
+    // DEFAULT_APP_CONFIG is not onboarded, so the welcome screen comes back
+    setSettingsOpen(false);
+    notify('Workspace reset', 'info');
   }, [forgetAll, handleResetFilters, notify, openFolder, setConfig]);
+
+  const handleTryDemo = useCallback(() => {
+    setConfig((prev) => ({ ...prev, onboarded: true }));
+  }, [setConfig]);
 
   const handleImportConfig = useCallback(
     (nextConfig: AppConfig) => {
@@ -233,7 +241,7 @@ export default function App() {
   const clearSearch = useCallback(() => setSearchQuery(''), []);
   const togglePreview = useCallback(() => setPreviewOpen((prev) => !prev), []);
   useKeyboardShortcuts({
-    enabled: !settingsOpen && !contextMenu,
+    enabled: config.onboarded && !settingsOpen && !contextMenu,
     searchInputRef,
     favorites: config.favorites,
     searchQuery,
@@ -424,6 +432,14 @@ export default function App() {
         onResetWorkspace={handleResetWorkspace}
         onNotify={notify}
       />
+
+      {!config.onboarded && (
+        <WelcomeScreen
+          isDesktop={NATIVE_SHELL}
+          onChooseFolder={() => void mounting.addLocalFolder()}
+          onTryDemo={handleTryDemo}
+        />
+      )}
 
       <ToastContainer toasts={toasts} />
     </div>

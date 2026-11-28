@@ -20,6 +20,8 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   includeSubfolders: true,
   showHiddenFiles: false,
   theme: 'light',
+  // A fresh install (or a Reset) shows the welcome screen first
+  onboarded: false,
   favorites: [
     {
       id: 'fav_projects',

@@ -36,9 +36,10 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | L8 | Low | Sort toolbar dark background is the canvas `#272727`, not the documented toolbar `#2C2C2C`; its "Saved per folder" hint is below AA contrast | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#16](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/16) |
 | L9 | Low | Secondary greys `#767676` / `#8E8E8E` fall below AA contrast on several backgrounds (search box, Backspace hint, sidebar counts, settings paths) | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#17](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/17) |
 | L10 | Low | Empty-state icons in the file list are `#6E6E6E` in dark mode, 2.93:1 on `#272727` (below 3:1, though decorative) | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#19](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/19) |
-| F1 | ✨ Feature | First launch always opens the demo folders; there is no step to choose a real project folder as the Default | 🟡 In progress | ⏳ |
+| F1 | ✨ Feature | First launch always opens the demo folders; there is no step to choose a real project folder as the Default | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#20](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/20) |
 | F2 | ✨ Feature | No way to rename anything from inside the app | ⏳ Not started | |
 | F3 | ✨ Feature | No manual refresh: changes on disk only show after reconnecting or restarting | ⏳ Not started | |
+| F4 | ✨ Feature | Only one item can be selected at a time, and files can't be cut and pasted into another folder | ⏳ Not started | |
 
 ---
 
@@ -1334,10 +1335,10 @@ Option B: change the dark icon colour from `#6E6E6E` to `#8E8E8E` (4.56:1 on `#2
 | Stage | Status | Notes |
 |-------|--------|-------|
 | 📋 Document | ✅ | This section |
-| 🔀 PR | ⏳ | |
+| 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#20](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/20) |
 | 📝 Proposal | ✅ | Below (first-run picker, desktop and web; agreed 2026-11-28) |
-| 🔧 Implementation | ⏳ | |
-| ✅ Ready-to-close check | ⏳ | |
+| 🔧 Implementation | ✅ | New `WelcomeScreen.tsx`; `onboarded` config key; see below |
+| ✅ Ready-to-close check | ✅ | All checks pass; see below |
 | 🏁 Closed | ⏳ | |
 
 ### Problem
@@ -1354,6 +1355,33 @@ Persisting a real Default already works (H1, H2): the desktop shell rescans save
 4. Saved configs from earlier versions count as set up, so existing users never see the welcome screen.
 5. Settings → **Reset Demo** becomes **Reset workspace** and returns to the welcome screen.
 6. `config.json` gets an optional `onboarded` boolean; files without it still import (treated as set up).
+
+### Implementation
+
+| Change | File |
+|--------|------|
+| `onboarded: boolean` added to `AppConfig` | `src/types/foldary.ts` |
+| `DEFAULT_APP_CONFIG.onboarded = false`, so a fresh install or a Reset shows the welcome screen | `src/data/demoWorkspace.ts` |
+| Import/load: missing or invalid `onboarded` → `true` (earlier configs count as set up); export writes the key | `src/services/configStorage.ts` |
+| Mounting while not onboarded: the folder replaces the demo favorites, becomes the Default and sets `onboarded`; toast "Project folder set to …". Later mounts append as before | `src/hooks/useFolderMounting.ts` |
+| New welcome dialog: **Choose project folder** (focused) / **Try the demo**, Tab kept inside, light + dark tokens | `src/components/WelcomeScreen.tsx` |
+| Renders the welcome screen while `!config.onboarded`; global shortcuts off meanwhile; Reset closes Settings | `src/App.tsx` |
+| "Reset Demo" → "Reset workspace" | `src/components/SettingsModal.tsx` |
+| 3 new unit tests (fresh default, legacy config, explicit value + export); fixtures get `onboarded` | `src/services/configStorage.test.ts`, `src/services/startup.test.ts` |
+| Component list | `AGENTS.md` |
+
+### Ready to close
+
+| Check | Result |
+|-------|--------|
+| `npm run lint` | ✅ 0 errors |
+| `npm test` | ✅ 41 tests (38 → 41) |
+| `npm run build` | ✅ JS bundle 331.9 → 336.0 kB |
+| F1 browser test (production build) | ✅ 22/22: welcome on fresh install, focus + Tab trap, Ctrl+K blocked, Try the demo remembered, Reset brings it back, fallback picker and File System Access picker each set the project folder as only favorite + Default, later Add folder appends, reload restores, cancel keeps the screen, legacy config skips it |
+| Contrast | ✅ White on `#0067C0` 5.67:1, `#1A1A1A` on `#60CDFF` 9.68:1, body `#5C5C5C`/`#FFFFFF` 6.69:1, `#A6A6A6`/`#272727` 6.14:1 |
+| Browser regression suite | ✅ L1 6, H1 13, H2 23, H3 14, M1 18, M2 24, M3 22, M4 16, M5 17, M6 7, L3 37, web-mode check; all unchanged. The suite answers the welcome screen with "Try the demo" first, and H3 uses the new "Reset workspace" label |
+| `cargo test` | ➖ Not run; no Rust changes |
+| Desktop (Tauri) native dialog | ➖ Not testable in the cloud container; uses the same `addLocalFolder` path as the existing Add folder button |
 
 ### Out of scope
 
@@ -1393,4 +1421,21 @@ User request: "give the rename option within the app". Nothing in the app can be
 ### Problem
 
 User request: "a manual refresh button". A local folder is scanned once, when it is mounted or reconnected. Files added, removed or changed on disk afterwards don't appear until the folder is reconnected or the app restarts, and there is no button to rescan it.
+
+---
+
+## F4 — Select several items, cut and paste
+
+| Stage | Status | Notes |
+|-------|--------|-------|
+| 📋 Document | ✅ | This section |
+| 🔀 PR | ⏳ | Starts after F3 merges |
+| 📝 Proposal | ⏳ | |
+| 🔧 Implementation | ⏳ | |
+| ✅ Ready-to-close check | ⏳ | |
+| 🏁 Closed | ⏳ | |
+
+### Problem
+
+User request: "select batches as well as cut and paste". The file list holds a single `selectedId`, so there is no Ctrl/Shift-click, Ctrl+A or batch action. There is also no Cut / Paste to move files between folders; the app never writes to disk today.
 

@@ -56,6 +56,8 @@ export interface AppConfig {
   showHiddenFiles: boolean;
   theme: ThemeMode;
   favorites: FavoriteFolder[];
+  /** False until the first-run welcome screen is answered (project folder chosen or demo picked) */
+  onboarded: boolean;
 }
 
 export interface FileEntry {

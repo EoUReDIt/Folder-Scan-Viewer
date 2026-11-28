@@ -47,6 +47,7 @@ describe('validateAndNormalizeConfig', () => {
       includeSubfolders: true,
       showHiddenFiles: false,
       theme: 'light',
+      onboarded: true,
       favorites: [
         {
           id: 'x',
@@ -98,5 +99,24 @@ describe('config.json export', () => {
     const reimported = valid(exported);
     expect(JSON.parse(exportConfigJsonString(reimported))).toEqual(exported);
     expect(reimported.favorites.at(-1)).toMatchObject(localFolder);
+  });
+});
+
+describe('first-run setup flag (F1)', () => {
+  const minimal = { favorites: [{ id: 'a', name: 'A', path: 'a' }] };
+
+  it('starts a fresh install on the welcome screen', () => {
+    expect(DEFAULT_APP_CONFIG.onboarded).toBe(false);
+  });
+
+  it('treats configs saved before the flag existed as already set up', () => {
+    expect(valid(minimal).onboarded).toBe(true);
+    expect(valid({ ...minimal, onboarded: 'yes' }).onboarded).toBe(true);
+  });
+
+  it('keeps an explicit value and exports it', () => {
+    expect(valid({ ...minimal, onboarded: false }).onboarded).toBe(false);
+    const exported = JSON.parse(exportConfigJsonString(valid({ ...minimal, onboarded: true })));
+    expect(exported.onboarded).toBe(true);
   });
 });
