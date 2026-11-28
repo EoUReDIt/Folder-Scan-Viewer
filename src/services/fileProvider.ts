@@ -245,31 +245,82 @@ export function getCategoryLabel(category: FileCategory, extension: string): str
 }
 
 /**
- * Simple, fast subsequence + substring matcher for instant Listary-style filtering.
+ * How well an entry matches the search box, best first:
+ * 4 every word starts a word in the name, 3 every word is in the name, 2 every word is in the
+ * name or relative path (at least one only in the path), 1 single-word letters in order within
+ * the name (fuzzy), 0 no match. Fuzzy results are only kept when nothing scores 2+ (see
+ * matchQueryInScope).
  */
-export function matchesQuery(entry: FileEntry, rawQuery: string): boolean {
-  const q = rawQuery.trim().toLowerCase();
-  if (!q) return true;
-  const targetName = entry.name.toLowerCase();
-  const targetPath = entry.relativePath.toLowerCase();
+export type QueryMatchTier = 0 | 1 | 2 | 3 | 4;
 
-  // Direct substring match (supports space-separated multi-token queries)
-  const tokens = q.split(/\s+/).filter(Boolean);
-  const allTokensMatch = tokens.every(
-    (token) => targetName.includes(token) || targetPath.includes(token)
-  );
-  if (allTokensMatch) return true;
+const WORD_SEPARATOR = /[_\-.\s]/;
 
-  // Subsequence fuzzy fallback on single token against filename
-  if (tokens.length === 1) {
-    let qi = 0;
-    for (let i = 0; i < targetName.length && qi < q.length; i++) {
-      if (targetName[i] === q[qi]) qi++;
-    }
-    return qi === q.length;
+function startsWordAt(name: string, lowerName: string, token: string): boolean {
+  for (let idx = lowerName.indexOf(token); idx !== -1; idx = lowerName.indexOf(token, idx + 1)) {
+    if (idx === 0) return true;
+    const prev = name[idx - 1] ?? '';
+    const cur = name[idx] ?? '';
+    if (WORD_SEPARATOR.test(prev)) return true;
+    // camelCase boundary: "HardwareUpgrade" starts a word at "U"
+    if (prev !== prev.toUpperCase() && cur !== cur.toLowerCase()) return true;
   }
-
   return false;
+}
+
+function isSubsequence(query: string, target: string): boolean {
+  let qi = 0;
+  for (let i = 0; i < target.length && qi < query.length; i++) {
+    if (target[i] === query[qi]) qi++;
+  }
+  return qi === query.length;
+}
+
+export function queryMatchTier(entry: FileEntry, rawQuery: string): QueryMatchTier {
+  const q = rawQuery.trim().toLowerCase();
+  if (!q) return 4;
+  const tokens = q.split(/\s+/).filter(Boolean);
+  const name = entry.name.toLowerCase();
+  const path = entry.relativePath.toLowerCase();
+
+  if (tokens.every((t) => name.includes(t))) {
+    return tokens.every((t) => startsWordAt(entry.name, name, t)) ? 4 : 3;
+  }
+  if (tokens.every((t) => name.includes(t) || path.includes(t))) return 2;
+  if (tokens.length === 1 && isSubsequence(q, name)) return 1;
+  return 0;
+}
+
+/** True when the entry matches the query on its own (any tier, fuzzy included). */
+export function matchesQuery(entry: FileEntry, rawQuery: string): boolean {
+  return queryMatchTier(entry, rawQuery) > 0;
+}
+
+export interface QueryMatchResult {
+  /** Tier per entry id; entries that do not match are absent. */
+  tiers: Map<string, QueryMatchTier>;
+  /** True when nothing matched directly and the results are fuzzy matches only. */
+  closeMatches: boolean;
+}
+
+/**
+ * Matches the query against a whole set of entries. Fuzzy (tier 1) matches are kept only when
+ * no entry in the set matches directly, so a typo still finds something while a real word does
+ * not pull in unrelated names. Returns null for an empty query (everything matches).
+ */
+export function matchQueryInScope(entries: FileEntry[], rawQuery: string): QueryMatchResult | null {
+  if (!rawQuery.trim()) return null;
+  const tiers = new Map<string, QueryMatchTier>();
+  let direct = false;
+  for (const entry of entries) {
+    const tier = queryMatchTier(entry, rawQuery);
+    if (tier === 0) continue;
+    if (tier >= 2) direct = true;
+    tiers.set(entry.id, tier);
+  }
+  if (direct) {
+    for (const [id, tier] of tiers) if (tier === 1) tiers.delete(id);
+  }
+  return { tiers, closeMatches: !direct && tiers.size > 0 };
 }
 
 export function isWithinRecency(timestamp: number, recency: RecencyFilter): boolean {
@@ -328,7 +379,31 @@ export interface FilterSortOptions {
   foldersFirst: boolean;
 }
 
+/** Scope, hidden and recency filters: the set the search and the sidebar counts work on. */
+function searchBase(
+  entries: FileEntry[],
+  currentSubpath: string,
+  includeSubfolders: boolean,
+  showHiddenFiles: boolean,
+  recency: RecencyFilter
+): FileEntry[] {
+  return scopeEntriesToSubpath(entries, currentSubpath, includeSubfolders).filter((entry) => {
+    if (!showHiddenFiles && entry.isHidden) return false;
+    return isWithinRecency(entry.dateModified, recency);
+  });
+}
+
+export interface FilteredEntries {
+  entries: FileEntry[];
+  /** True when the query matched nothing directly and only fuzzy matches are shown. */
+  closeMatches: boolean;
+}
+
 export function filterAndSortEntries(options: FilterSortOptions): FileEntry[] {
+  return filterAndSortEntriesWithInfo(options).entries;
+}
+
+export function filterAndSortEntriesWithInfo(options: FilterSortOptions): FilteredEntries {
   const {
     entries,
     currentSubpath,
@@ -342,11 +417,10 @@ export function filterAndSortEntries(options: FilterSortOptions): FileEntry[] {
     foldersFirst,
   } = options;
 
-  const scoped = scopeEntriesToSubpath(entries, currentSubpath, includeSubfolders);
+  const base = searchBase(entries, currentSubpath, includeSubfolders, showHiddenFiles, recency);
+  const match = matchQueryInScope(base, query);
 
-  const filtered = scoped.filter((entry) => {
-    if (!showHiddenFiles && entry.isHidden) return false;
-
+  const filtered = base.filter((entry) => {
     if (filterType === 'folder' && !entry.isFolder) return false;
     if (filterType === 'file' && entry.isFolder) return false;
     if (
@@ -357,18 +431,19 @@ export function filterAndSortEntries(options: FilterSortOptions): FileEntry[] {
     ) {
       return false;
     }
-
-    if (!isWithinRecency(entry.dateModified, recency)) return false;
-    if (!matchesQuery(entry, query)) return false;
-
-    return true;
+    return !match || match.tiers.has(entry.id);
   });
 
   const dir = sortOrder === 'asc' ? 1 : -1;
 
-  return [...filtered].sort((a, b) => {
+  const sorted = [...filtered].sort((a, b) => {
     if (foldersFirst && a.isFolder !== b.isFolder) {
       return a.isFolder ? -1 : 1;
+    }
+    // While searching, better matches come first; the column sort orders each tier
+    if (match) {
+      const tierDiff = (match.tiers.get(b.id) ?? 0) - (match.tiers.get(a.id) ?? 0);
+      if (tierDiff !== 0) return tierDiff;
     }
 
     let cmp = 0;
@@ -406,6 +481,7 @@ export function filterAndSortEntries(options: FilterSortOptions): FileEntry[] {
     }
     return cmp * dir;
   });
+  return { entries: sorted, closeMatches: match?.closeMatches ?? false };
 }
 
 export function computeCategoryCounts(
@@ -416,14 +492,10 @@ export function computeCategoryCounts(
   recency: RecencyFilter,
   query: string
 ): Record<FilterType, number> {
-  const scoped = scopeEntriesToSubpath(entries, currentSubpath, includeSubfolders).filter(
-    (entry) => {
-      if (!showHiddenFiles && entry.isHidden) return false;
-      if (!isWithinRecency(entry.dateModified, recency)) return false;
-      if (!matchesQuery(entry, query)) return false;
-      return true;
-    }
-  );
+  const base = searchBase(entries, currentSubpath, includeSubfolders, showHiddenFiles, recency);
+  const match = matchQueryInScope(base, query);
+  // Same matching as filterAndSortEntries, so the counts always equal what the grid shows
+  const scoped = match ? base.filter((entry) => match.tiers.has(entry.id)) : base;
 
   const counts: Record<FilterType, number> = {
     all: scoped.length,

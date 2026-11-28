@@ -20,7 +20,7 @@ import {
 import {
   computeCategoryCounts,
   convertFileListToEntries,
-  filterAndSortEntries,
+  filterAndSortEntriesWithInfo,
   getHandlePermission,
   LocalDirectoryHandle,
   resolveSubdirectoryHandle,
@@ -282,9 +282,9 @@ export default function App() {
     setConfig((prev) => ({ ...prev, includeSubfolders: next }));
   }, [includeSubfolders]);
 
-  const visibleEntries = useMemo(
+  const { entries: visibleEntries, closeMatches } = useMemo(
     () =>
-      filterAndSortEntries({
+      filterAndSortEntriesWithInfo({
         entries: activeRootEntries,
         currentSubpath,
         includeSubfolders,
@@ -340,6 +340,14 @@ export default function App() {
       setSelectedId(visibleEntries[0].id);
     }
   }, [visibleEntries, selectedId]);
+
+  // Typing a query selects the best match, so Enter opens it
+  const lastQueryRef = useRef(searchQuery);
+  useEffect(() => {
+    if (searchQuery === lastQueryRef.current) return;
+    lastQueryRef.current = searchQuery;
+    if (searchQuery.trim() && visibleEntries.length > 0) setSelectedId(visibleEntries[0].id);
+  }, [searchQuery, visibleEntries]);
 
   const selectedEntry = useMemo(
     () => visibleEntries.find((e) => e.id === selectedId) ?? null,
@@ -1144,6 +1152,7 @@ export default function App() {
             startupBehavior={config.startupBehavior}
             includeSubfolders={includeSubfolders}
             totalVisible={visibleEntries.length}
+            closeMatches={closeMatches}
             hasActiveFilters={hasActiveFilters}
             onQuickSort={handleQuickSort}
             onToggleIncludeSubfolders={handleToggleIncludeSubfolders}

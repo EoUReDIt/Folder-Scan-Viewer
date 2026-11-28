@@ -23,8 +23,9 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | M1 | 🟡 Medium | Native-picker folders get `dateModified: Date.now()`; skews recency filter and Recent sort | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#4](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/4) |
 | M2 | 🟡 Medium | Scan cap (2,500) leaks; fallback picker has no cap or `node_modules`/`.git` skip; no grid virtualization | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#5](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/5) |
 | M3 | 🟡 Medium | "Open Containing Folder" silently persists `includeSubfolders = false` | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#6](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/6) |
-| M4 | 🟡 Medium | Hidden-file detection differs between native and fallback pickers | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#7](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/7) |
-| M5 | 🟡 Medium | Single-token fuzzy search over-matches with no relevance ranking | ⏳ | — |
+| M4 | 🟡 Medium | Hidden-file detection differs between native and fallback pickers | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#7](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/7) |
+| M5 | 🟡 Medium | Single-token fuzzy search over-matches with no relevance ranking | ✅ Ready to close | [EoUReDIt/Folder-Scan-Viewer#8](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/8) |
+| M6 | 🟡 Medium | Grid keyboard scroll-sync: rapid ↓/↑ on a 2,500-row folder sometimes drops a key and throws React error #185 (update depth exceeded). Present since M2; seen in 2–3 of 8 runs of the M2 test, old and new code alike | ⏳ | — |
 | L1 | Low | Unused AI Studio leftovers (`@google/genai`, `express`, `dotenv`, `motion`, `tsx`, Gemini `.env.example`, `metadata.json`); build tools in `dependencies` | ⏳ | — |
 | L2 | Low | Removing a local favorite leaks its `localFolders` entry | ✅ Merged | [#1](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/1) (folded into H1) |
 | L3 | Low | Accessibility: rows not focusable, context menu lacks focus/arrow keys, settings modal lacks focus trap | ⏳ | — |
@@ -505,7 +506,7 @@ One addition to the proposal: the `FileGrid.tsx` dependency change. Without it, 
 | 📝 Proposal | ✅ | See Proposal below |
 | 🔧 Implementation | ✅ | See Implementation below |
 | ✅ Ready-to-close check | ✅ | Ready, pending the owner's merge |
-| 🏁 Closed | ⏳ | |
+| 🏁 Closed | ✅ | Merged 2026-11-28 (`438b184`) |
 
 ### Problem
 
@@ -568,3 +569,101 @@ The Windows *Hidden* attribute cannot be read from a browser: neither `File` nor
 | H1 / H2 / H3 / M1 / M2 / M3 regressions, web check | ✅ 13/13 · 23/23 · 14/14 · 18/18 · 24/24 · 22/22 · 1/1 |
 | Light + dark screenshots | ✅ |
 
+## M5 — Single-word search matches too much and is not ranked
+
+| Stage | Status | Notes |
+|-------|--------|-------|
+| 📋 Document | ✅ | This section |
+| 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#8](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/8) |
+| 📝 Proposal | ✅ | See Proposal below |
+| 🔧 Implementation | ✅ | See Implementation below |
+| ✅ Ready-to-close check | ✅ | See below |
+| 🏁 Closed | ⏳ | |
+
+### Problem
+
+`matchesQuery` in `src/services/fileProvider.ts` accepts an entry when every word of the query is in its name or relative path. For a single word it also accepts any name that contains the letters **in order, anywhere** (a subsequence match). That fuzzy match always runs, not only when nothing else matches. Results are then sorted only by the column sort.
+
+Measured on the demo workspace (40 entries, every folder, subfolders included):
+
+| Query | Results | Contain the text | Fuzzy-only extras |
+|-------|---------|------------------|-------------------|
+| `rep` | 14 | 4 | `hero_banner.png`, `foldary_logo_proof.webp`, `launcher_demo_capture.mp4`, `release_v0.2_assets.zip`, `systems_craft_ep42.mp3`, `fluent_grid_reference.jpg`, `rust_async_patterns_2026.pdf`, `INV-2026-09_HardwareUpgrade.pdf`, `workstation_receipt_photo.jpg`, `2025_receipts_backup.7z` |
+| `mp4` | 3 | 2 | `systems_craft_ep42.mp3` |
+| `png` | 4 | 2 | `layout_blueprint.jpg`, `2026_Expenses_Ledger.csv` |
+| `note` | 3 | 2 | `launcher_demo_capture.mp4` |
+| `arch` | 2 | 1 | `workstation_receipt_photo.jpg` |
+
+Consequences:
+- Most results for a short word are unrelated, and longer names in a real folder match almost any three letters.
+- No ranking: with the default *Recent* sort, a file named exactly like the query can sit under newer unrelated hits. A file that only matches because its **folder** name contains the word ranks the same as a name match.
+- **Enter** opens the selected row. When the earlier selection still matches, it stays selected, so Enter does not open the best match.
+- Nothing tells the user that a result is a loose match.
+
+### Proposal
+
+1. **Match tiers** (`src/services/fileProvider.ts`)
+   - Replace the yes/no matcher with `queryMatchTier(entry, query)`, which returns:
+     - **4 word start**: every query word starts a word in the name. A word starts at the start of the name, after `_ - . space`, or at a lower-to-upper case change. For example, `report` in `Q4_Report.pdf`.
+     - **3 name**: every word is somewhere in the name.
+     - **2 path**: every word is in the name or the relative path, and at least one is only in the path.
+     - **1 fuzzy**: single-word query, letters in order within the name.
+     - **0**: no match.
+   - Keep `matchesQuery` as a wrapper (tier > 0), so other callers do not change.
+2. **Fuzzy only as a fallback**
+   - New shared helper `matchQueryInScope(entries, query)`. It works on the folder's entries after scope, hidden and recency filters, before the type filter. It returns each entry's tier and whether fuzzy is in use.
+   - Fuzzy matches are kept **only when no entry reaches tier 2 or above**. A typo such as `rprt` still finds `Q4_Report.pdf`, but `rep` no longer pulls in `hero_banner.png`.
+   - `filterAndSortEntries` and `computeCategoryCounts` both use the helper, so the sidebar counts always equal what the grid shows.
+3. **Ranking with a query**
+   - While a query is typed, rows sort by: *Pin folders to top* group first (unchanged), then tier (highest first), then the chosen column sort inside each tier.
+   - With no query, sorting is unchanged.
+4. **Selection follows the query** (`src/App.tsx`)
+   - When the query text changes and is not empty, the first (best) row is selected, so **Enter** opens the top match.
+   - Arrow keys work as before.
+5. **Say when results are loose** (`src/components/SortToolbar.tsx`)
+   - When the fallback is active, the item count reads `N items · close matches`. It is plain muted text, not a pill, with light and dark colors.
+6. **Verify**
+   - `npm run lint` and `npm run build` pass.
+   - Unit checks on the demo data with `tsx`:
+     - `rep` gives only the 4 entries that contain it
+     - `mp4` excludes `.mp3`, `png` excludes `.jpg` and `.csv`
+     - `rprt` falls back to fuzzy and finds `Q4_Report.pdf`
+     - tiers come out 4 > 3 > 2 > 1 as defined
+     - multi-word queries are unchanged
+   - Playwright on the demo workspace:
+     - typing `report` puts the word-start name match first under the *Recent* sort
+     - Enter after typing opens the top row
+     - `rprt` shows *close matches*, and `rep` does not
+     - sidebar counts equal the grid
+     - Esc clears and the original order comes back
+   - All earlier regressions pass (H1, H2, H3, M1, M2, M3, M4). Light and dark screenshots.
+
+**Out of scope**:
+- Searching file contents.
+- Typo tolerance for multi-word queries.
+- Highlighting the matched letters in names.
+- Indexing or search across folders that are not open.
+
+### Implementation
+
+| Area | Files | What changed |
+|------|-------|--------------|
+| Match tiers | `src/services/fileProvider.ts` | `queryMatchTier` returns 4 word start, 3 name, 2 path, 1 fuzzy or 0. `matchesQuery` is kept as `tier > 0` |
+| Fuzzy fallback | `src/services/fileProvider.ts` | `matchQueryInScope` drops fuzzy hits whenever any entry reaches tier 2+, and reports `closeMatches`. It runs on the scope + hidden + recency base, before the type filter |
+| One code path | `src/services/fileProvider.ts` | New `filterAndSortEntriesWithInfo` returns `{ entries, closeMatches }`. `filterAndSortEntries` wraps it. `computeCategoryCounts` uses the same base and matcher, so sidebar counts equal the grid |
+| Ranking | `src/services/fileProvider.ts` | With a query, rows sort by the folders-first group, then tier (highest first), then the column sort |
+| Selection | `src/App.tsx` | When the query text changes and is not empty, the top row is selected, so Enter opens the best match |
+| Close-match label | `src/components/SortToolbar.tsx` | In fuzzy fallback the count reads `N close matches` (muted mono text with a tooltip). **Change from proposal item 5:** the planned `N items · close matches` was too wide and wrapped the toolbar onto a second line, shifting the grid down. Replacing the word keeps the toolbar on one line |
+
+### Ready-to-close check
+
+| Check | Result |
+|-------|--------|
+| `npm run lint` | ✅ |
+| `npm run build` | ✅ |
+| Unit checks on demo data (`tsx`): `rep` 14 → 4, `mp4` excludes `.mp3`, `png` excludes `.jpg`/`.csv`, `rprt` falls back to fuzzy, tiers descend, counts equal the grid for every folder and query | ✅ 18/18 |
+| Playwright on demo workspace: `retro`, `png`, `rep` drop unrelated names; `report` gives Reports and Q4_Report.pdf first under *Recent*, then path-only hits; the top row is selected while typing; Enter opens the top match; `rprt` shows the close-match label on the toolbar's first line; sidebar *All* = rows; Esc restores the full list; multi-word path matching unchanged; no page errors | ✅ 17/17 |
+| Same M5 test on the code before the fix | ❌ 6 failures, as described in Problem |
+| H1 / H2 / H3 / M1 / M2 / M3 / M4 regressions, web check | ✅ 13/13 · 23/23 · 14/14 · 18/18 · 24/24 · 22/22 · 16/16 · 1/1 |
+| M2 test flake (rapid arrow keys, React #185) | 🟡 Pre-existing: old code fails 3/8 runs, new code 2/8. Not caused by M5; logged as **M6** |
+| Light + dark screenshots | ✅ |
