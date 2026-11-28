@@ -43,6 +43,8 @@ export interface FavoriteFolder {
   /** Optional root demo folder id + subpath when a nested folder is pinned */
   baseDemoId?: string;
   subpath?: string;
+  /** Desktop shell only: absolute path of the folder on disk (rescanned on startup) */
+  nativePath?: string;
 }
 
 export interface AppConfig {
@@ -81,6 +83,8 @@ export interface FileEntry {
   duration?: string;
   /** Attached browser File object for mounted local folders */
   localFile?: File;
+  /** Desktop shell only: absolute path on disk, used for open/reveal/preview */
+  nativePath?: string;
 }
 
 export interface ContextMenuState {

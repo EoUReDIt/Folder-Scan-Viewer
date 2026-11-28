@@ -29,6 +29,16 @@ import {
   tryPickDirectoryWithNativeApi,
 } from './services/fileProvider';
 import { clearHandles, deleteHandle, loadHandle, saveHandle } from './services/handleStore';
+import {
+  isNativeShell,
+  joinNativePath,
+  NativeScannedFolder,
+  openNativePath,
+  pickNativeFolder,
+  revealNativePath,
+  scanNativeFolder,
+  syncNativeFolders,
+} from './services/nativeBridge';
 import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
 import { SortToolbar } from './components/SortToolbar';
@@ -37,6 +47,16 @@ import { PreviewPane } from './components/PreviewPane';
 import { ContextMenu } from './components/ContextMenu';
 import { SettingsModal } from './components/SettingsModal';
 import { ToastContainer } from './components/ToastContainer';
+
+// Running inside the Tauri desktop shell: folders come from Rust commands, not browser APIs
+const NATIVE_SHELL = isNativeShell();
+
+/** Tells the shell which picked folders favorites still use so it can forget the others. */
+function syncNativeAccess(favorites: FavoriteFolder[]) {
+  if (!NATIVE_SHELL) return;
+  const keep = favorites.flatMap((f) => (f.nativePath ? [f.nativePath] : []));
+  void syncNativeFolders(keep).catch(() => undefined);
+}
 
 function getInitialFolder(config: AppConfig): FavoriteFolder {
   return (
@@ -106,7 +126,24 @@ export default function App() {
   // Rescan a local favorite from its stored handle. `request` asks the browser for
   // permission and must only be true inside a click handler.
   const restoreLocalFolder = useCallback(
-    async (id: string, request: boolean): Promise<boolean> => {
+    async (id: string, request: boolean, nativePath?: string): Promise<boolean> => {
+      if (NATIVE_SHELL) {
+        // Imported or browser-made favorites have no disk path: the folder must be picked again
+        if (!nativePath) {
+          setFolderStatus(id, 'needs-remount');
+          return false;
+        }
+        try {
+          const { entries } = await scanNativeFolder(nativePath, id);
+          setLocalFolders((prev) => ({ ...prev, [id]: entries }));
+          setFolderStatus(id, 'ready');
+          return true;
+        } catch {
+          // Moved, deleted, or never picked on this computer (outside the allowlist)
+          setFolderStatus(id, 'needs-remount');
+          return false;
+        }
+      }
       const handle = handlesRef.current[id] ?? (await loadHandle(id));
       if (!handle) {
         setFolderStatus(id, 'needs-remount');
@@ -166,7 +203,7 @@ export default function App() {
       if (checkedLocalIdsRef.current.has(fav.id)) return;
       checkedLocalIdsRef.current.add(fav.id);
       setFolderStatus(fav.id, 'loading');
-      void restoreLocalFolder(fav.id, false);
+      void restoreLocalFolder(fav.id, false, fav.nativePath);
     });
   }, [config.favorites, restoreLocalFolder, setFolderStatus]);
 
@@ -366,9 +403,7 @@ export default function App() {
   const resolveSubfolderFavoritePath = useCallback(
     (subpath: string) => {
       const cleanSub = subpath.replace(/^\/+|\/+$/g, '');
-      const fullPath = cleanSub
-        ? `${activeFolder.path}\\${cleanSub.split('/').join('\\')}`
-        : activeFolder.path;
+      const fullPath = joinNativePath(activeFolder.path, cleanSub);
       const existing = config.favorites.find(
         (f) => f.path.toLowerCase() === fullPath.toLowerCase()
       );
@@ -397,6 +432,7 @@ export default function App() {
               ...entry,
               parentPath: newParent,
               entryPath: newEntryPath,
+              relativePath: newParent ? `.\\${newParent.split('/').join('\\')}\\` : '.\\',
             };
           }
         );
@@ -419,6 +455,9 @@ export default function App() {
           sortOrder,
           foldersFirst,
           sourceType: 'local',
+          ...(activeFolder.nativePath
+            ? { nativePath: joinNativePath(activeFolder.nativePath, entryPath) }
+            : {}),
         };
         setConfig((prev) => ({ ...prev, favorites: [...prev.favorites, newFav] }));
         return newFav;
@@ -462,10 +501,12 @@ export default function App() {
       }
       if (config.favorites.length <= 1) return;
 
+      const remaining = config.favorites.filter((f) => f.id !== folderId);
       setConfig((prev) => ({
         ...prev,
         favorites: prev.favorites.filter((f) => f.id !== folderId),
       }));
+      syncNativeAccess(remaining);
       // Drop runtime data for local favorites so removed folders don't linger in memory or IndexedDB
       setLocalFolders((prev) => {
         if (!(folderId in prev)) return prev;
@@ -578,7 +619,8 @@ export default function App() {
       rootName: string,
       rootPath: string,
       entries: FileEntry[],
-      handle?: LocalDirectoryHandle
+      handle?: LocalDirectoryHandle,
+      nativePath?: string
     ) => {
       setLocalFolders((prev) => ({ ...prev, [id]: entries }));
       setFolderStatus(id, 'ready');
@@ -596,6 +638,7 @@ export default function App() {
         sortOrder: config.globalSortOrder,
         foldersFirst: true,
         sourceType: 'local',
+        ...(nativePath ? { nativePath } : {}),
       };
 
       setConfig((prev) => ({
@@ -634,8 +677,29 @@ export default function App() {
     [config.favorites, notify, setFolderStatus]
   );
 
+  // Reports a native pick or scan failure, and warns when the scan hit its entry limit
+  const reportNativeScan = useCallback(
+    (picked: NativeScannedFolder) => {
+      if (picked.truncated) {
+        notify(`"${picked.rootName}" is large: only the first ${picked.entries.length} items are listed`, 'info');
+      }
+    },
+    [notify]
+  );
+
   const handleAddLocalFolder = useCallback(async () => {
     const id = `local_${Date.now()}`;
+    if (NATIVE_SHELL) {
+      try {
+        const picked = await pickNativeFolder(id);
+        if (!picked) return;
+        mountEntriesAsLocalFavorite(id, picked.rootName, picked.rootPath, picked.entries, undefined, picked.rootPath);
+        reportNativeScan(picked);
+      } catch (err) {
+        notify(`Could not open folder: ${String(err)}`, 'error');
+      }
+      return;
+    }
     const result = await tryPickDirectoryWithNativeApi(id);
     if (result.status === 'picked') {
       mountEntriesAsLocalFavorite(
@@ -653,10 +717,31 @@ export default function App() {
     // Fallback to standard directory input (works reliably inside iframes and all browsers)
     remountTargetRef.current = null;
     folderInputRef.current?.click();
-  }, [mountEntriesAsLocalFavorite]);
+  }, [mountEntriesAsLocalFavorite, notify, reportNativeScan]);
 
   const handleChooseLocalFolderAgain = useCallback(
     async (id: string) => {
+      if (NATIVE_SHELL) {
+        try {
+          const picked = await pickNativeFolder(id);
+          if (!picked) return;
+          const nextFavorites = config.favorites.map((f) =>
+            f.id === id ? { ...f, nativePath: picked.rootPath, path: picked.rootPath } : f
+          );
+          setConfig((prev) => ({
+            ...prev,
+            favorites: prev.favorites.map((f) =>
+              f.id === id ? { ...f, nativePath: picked.rootPath, path: picked.rootPath } : f
+            ),
+          }));
+          syncNativeAccess(nextFavorites);
+          refillLocalFavorite(id, picked.entries);
+          reportNativeScan(picked);
+        } catch (err) {
+          notify(`Could not open folder: ${String(err)}`, 'error');
+        }
+        return;
+      }
       const result = await tryPickDirectoryWithNativeApi(id);
       if (result.status === 'picked') {
         refillLocalFavorite(id, result.entries, result.handle);
@@ -666,20 +751,26 @@ export default function App() {
       remountTargetRef.current = id;
       folderInputRef.current?.click();
     },
-    [refillLocalFavorite]
+    [config.favorites, notify, refillLocalFavorite, reportNativeScan]
   );
 
   const handleReconnectLocalFolder = useCallback(
     async (id: string) => {
-      const ok = await restoreLocalFolder(id, true);
+      const nativePath = config.favorites.find((f) => f.id === id)?.nativePath;
+      const ok = await restoreLocalFolder(id, true, nativePath);
       if (ok) {
         setCurrentSubpath('');
         notify('Folder access restored', 'success');
       } else {
-        notify('Access was not granted. Try "Choose folder again".', 'info');
+        notify(
+          NATIVE_SHELL
+            ? 'Folder could not be read. Try "Choose folder again".'
+            : 'Access was not granted. Try "Choose folder again".',
+          'info'
+        );
       }
     },
-    [notify, restoreLocalFolder]
+    [config.favorites, notify, restoreLocalFolder]
   );
 
   const handleFallbackFolderInput = useCallback(
@@ -713,6 +804,30 @@ export default function App() {
     [notify]
   );
 
+  const handleOpenNative = useCallback(
+    async (entry: FileEntry) => {
+      if (!entry.nativePath) return;
+      try {
+        await openNativePath(entry.nativePath);
+      } catch (err) {
+        notify(`Could not open "${entry.name}": ${String(err)}`, 'error');
+      }
+    },
+    [notify]
+  );
+
+  const handleRevealNative = useCallback(
+    async (entry: FileEntry) => {
+      if (!entry.nativePath) return;
+      try {
+        await revealNativePath(entry.nativePath);
+      } catch (err) {
+        notify(`Could not show "${entry.name}": ${String(err)}`, 'error');
+      }
+    },
+    [notify]
+  );
+
   const handleResetFilters = useCallback(() => {
     setSearchQuery('');
     setFilterType('all');
@@ -726,6 +841,7 @@ export default function App() {
     handlesRef.current = {};
     checkedLocalIdsRef.current = new Set();
     void clearHandles();
+    syncNativeAccess([]);
     setConfig(DEFAULT_APP_CONFIG);
     const home = getInitialFolder(DEFAULT_APP_CONFIG);
     const startup = getStartupSort(DEFAULT_APP_CONFIG, home);
@@ -760,6 +876,7 @@ export default function App() {
         void deleteHandle(id);
       });
     }
+    syncNativeAccess(nextConfig.favorites);
     setConfig(nextConfig);
     const home = getInitialFolder(nextConfig);
     const startup = getStartupSort(nextConfig, home);
@@ -851,6 +968,16 @@ export default function App() {
         return;
       }
 
+      // Ctrl+Enter: open the selected file with its default app (desktop shell only)
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && selectedEntry) {
+        if (target?.tagName === 'BUTTON') return;
+        e.preventDefault();
+        if (selectedEntry.nativePath && !selectedEntry.isFolder) {
+          void handleOpenNative(selectedEntry);
+        }
+        return;
+      }
+
       // Enter: Open selected folder or preview file
       if (e.key === 'Enter' && selectedEntry) {
         if (target?.tagName === 'BUTTON') return;
@@ -887,6 +1014,7 @@ export default function App() {
     currentSubpath,
     handleDoubleClickRow,
     handleNavigateUp,
+    handleOpenNative,
     handleSelectFolder,
     searchQuery,
     selectedEntry,
@@ -1034,6 +1162,8 @@ export default function App() {
             onToggleFavoriteFolder={handleToggleFavoriteSubfolder}
             onSetFolderAsDefault={handleSetFolderAsDefault}
             onCopyPath={(path) => handleCopyText(path, 'Full path')}
+            onOpenNative={(entry) => void handleOpenNative(entry)}
+            onRevealNative={(entry) => void handleRevealNative(entry)}
           />
         )}
       </div>
@@ -1052,6 +1182,8 @@ export default function App() {
           notify('Opened containing folder', 'info');
         }}
         onCopyText={handleCopyText}
+        onOpenNative={(entry) => void handleOpenNative(entry)}
+        onRevealNative={(entry) => void handleRevealNative(entry)}
       />
 
       <SettingsModal
