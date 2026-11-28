@@ -20,7 +20,7 @@ interface ContextMenuProps {
   onToggleFavoriteFolder: (entryPath: string, name: string, fullPath: string) => void;
   onSetFolderAsDefault: (entryPath: string, name: string, fullPath: string) => void;
   onPreviewFile: () => void;
-  onOpenContainingFolder: (parentPath: string) => void;
+  onOpenContainingFolder: (entry: FileEntry) => void;
   onCopyText: (value: string, label: string) => void;
   /** Desktop shell only: shown for entries with a nativePath */
   onOpenNative: (entry: FileEntry) => void;
@@ -151,7 +151,7 @@ export function ContextMenu({
             type="button"
             role="menuitem"
             onClick={() => {
-              onOpenContainingFolder(entry.parentPath);
+              onOpenContainingFolder(entry);
               onClose();
             }}
             className="w-full px-3 py-1.5 flex items-center gap-2.5 text-left text-[13px] text-[#1A1A1A] dark:text-[#F3F3F3] hover:bg-[#F3F3F3] dark:hover:bg-[#383838] transition-colors"

@@ -101,6 +101,11 @@ export default function App() {
 
   const [activeFolderId, setActiveFolderId] = useState<string>(initialFolder.id);
   const [currentSubpath, setCurrentSubpath] = useState<string>('');
+  // Session-only "this folder only" scope set by Open Containing Folder. Never saved; it
+  // ends as soon as the active folder or subpath changes.
+  const [scopeOverride, setScopeOverride] = useState<{ folderId: string; subpath: string } | null>(
+    null
+  );
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterType, setFilterType] = useState<FilterType>('all');
   const [recency, setRecency] = useState<RecencyFilter>('all');
@@ -259,12 +264,30 @@ export default function App() {
     return demoWorkspace[activeFolder.id] ?? [];
   }, [activeFolder, demoWorkspace, localFolders]);
 
+  const scopeOverrideActive =
+    scopeOverride !== null &&
+    scopeOverride.folderId === activeFolder.id &&
+    scopeOverride.subpath === currentSubpath;
+  const includeSubfolders = config.includeSubfolders && !scopeOverrideActive;
+
+  // Drop the override once the user navigates away, so coming back does not revive it
+  useEffect(() => {
+    if (scopeOverride && !scopeOverrideActive) setScopeOverride(null);
+  }, [scopeOverride, scopeOverrideActive]);
+
+  // Flips the scope in use and saves it; also ends a temporary override
+  const handleToggleIncludeSubfolders = useCallback(() => {
+    const next = !includeSubfolders;
+    setScopeOverride(null);
+    setConfig((prev) => ({ ...prev, includeSubfolders: next }));
+  }, [includeSubfolders]);
+
   const visibleEntries = useMemo(
     () =>
       filterAndSortEntries({
         entries: activeRootEntries,
         currentSubpath,
-        includeSubfolders: config.includeSubfolders,
+        includeSubfolders,
         showHiddenFiles: config.showHiddenFiles,
         filterType,
         recency,
@@ -276,7 +299,7 @@ export default function App() {
     [
       activeRootEntries,
       currentSubpath,
-      config.includeSubfolders,
+      includeSubfolders,
       config.showHiddenFiles,
       filterType,
       recency,
@@ -292,7 +315,7 @@ export default function App() {
       computeCategoryCounts(
         activeRootEntries,
         currentSubpath,
-        config.includeSubfolders,
+        includeSubfolders,
         config.showHiddenFiles,
         recency,
         searchQuery
@@ -300,7 +323,7 @@ export default function App() {
     [
       activeRootEntries,
       currentSubpath,
-      config.includeSubfolders,
+      includeSubfolders,
       config.showHiddenFiles,
       recency,
       searchQuery,
@@ -1096,7 +1119,7 @@ export default function App() {
           filterType={filterType}
           categoryCounts={categoryCounts}
           recency={recency}
-          includeSubfolders={config.includeSubfolders}
+          includeSubfolders={includeSubfolders}
           showHiddenFiles={config.showHiddenFiles}
           foldersFirst={foldersFirst}
           onSelectFolder={handleSelectFolder}
@@ -1104,12 +1127,7 @@ export default function App() {
           onRemoveFavorite={handleRemoveFavorite}
           onFilterTypeChange={setFilterType}
           onRecencyChange={setRecency}
-          onToggleIncludeSubfolders={() =>
-            setConfig((prev) => ({
-              ...prev,
-              includeSubfolders: !prev.includeSubfolders,
-            }))
-          }
+          onToggleIncludeSubfolders={handleToggleIncludeSubfolders}
           onToggleShowHidden={() =>
             setConfig((prev) => ({
               ...prev,
@@ -1124,16 +1142,11 @@ export default function App() {
             sortBy={sortBy}
             sortOrder={sortOrder}
             startupBehavior={config.startupBehavior}
-            includeSubfolders={config.includeSubfolders}
+            includeSubfolders={includeSubfolders}
             totalVisible={visibleEntries.length}
             hasActiveFilters={hasActiveFilters}
             onQuickSort={handleQuickSort}
-            onToggleIncludeSubfolders={() =>
-              setConfig((prev) => ({
-                ...prev,
-                includeSubfolders: !prev.includeSubfolders,
-              }))
-            }
+            onToggleIncludeSubfolders={handleToggleIncludeSubfolders}
             onResetFilters={handleResetFilters}
           />
 
@@ -1181,10 +1194,14 @@ export default function App() {
         onToggleFavoriteFolder={handleToggleFavoriteSubfolder}
         onSetFolderAsDefault={handleSetFolderAsDefault}
         onPreviewFile={() => setPreviewOpen(true)}
-        onOpenContainingFolder={(parentPath) => {
-          setCurrentSubpath(parentPath);
-          setConfig((prev) => ({ ...prev, includeSubfolders: false }));
-          notify('Opened containing folder', 'info');
+        onOpenContainingFolder={(entry) => {
+          setCurrentSubpath(entry.parentPath);
+          if (includeSubfolders) {
+            setScopeOverride({ folderId: activeFolder.id, subpath: entry.parentPath });
+          }
+          setSelectedId(entry.id);
+          const folderName = entry.parentPath.split('/').pop() || activeFolder.name;
+          notify(`Showing "${folderName}" only`, 'info');
         }}
         onCopyText={handleCopyText}
         onOpenNative={(entry) => void handleOpenNative(entry)}
