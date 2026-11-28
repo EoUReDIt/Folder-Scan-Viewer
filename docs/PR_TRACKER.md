@@ -21,7 +21,7 @@ Status values: ⏳ Not started · 🟡 In progress · ✅ Done · ❌ Blocked
 | H2 | 🔴 High | Desktop build has no native filesystem layer: fake `Local\…` paths, no "Open file" action, `csp: null`, `core:default` only | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#3](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/3) |
 | H3 | 🔴 High | `config.json` export drops `sourceType`; re-imported local favorites become empty demo folders | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#2](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/2) |
 | M1 | 🟡 Medium | Native-picker folders get `dateModified: Date.now()`; skews recency filter and Recent sort | ✅ Merged | [EoUReDIt/Folder-Scan-Viewer#4](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/4) |
-| M2 | 🟡 Medium | Scan cap (2,500) leaks; fallback picker has no cap or `node_modules`/`.git` skip; no grid virtualization | 🟡 In progress | (PR pending) |
+| M2 | 🟡 Medium | Scan cap (2,500) leaks; fallback picker has no cap or `node_modules`/`.git` skip; no grid virtualization | 🟡 In progress | [EoUReDIt/Folder-Scan-Viewer#5](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/5) |
 | M3 | 🟡 Medium | "Open Containing Folder" silently persists `includeSubfolders = false` | ⏳ | — |
 | M4 | 🟡 Medium | Hidden-file detection differs between native and fallback pickers | ⏳ | — |
 | M5 | 🟡 Medium | Single-token fuzzy search over-matches with no relevance ranking | ⏳ | — |
@@ -339,10 +339,10 @@ There are no UI component changes. The grid and preview already call the formatt
 | Stage | Status | Notes |
 |-------|--------|-------|
 | 📋 Document | ✅ | This section |
-| 🔀 PR | ⏳ | |
+| 🔀 PR | ✅ | [EoUReDIt/Folder-Scan-Viewer#5](https://github.com/EoUReDIt/Folder-Scan-Viewer/pull/5) |
 | 📝 Proposal | ✅ | See Proposal below |
-| 🔧 Implementation | ⏳ | |
-| ✅ Ready-to-close check | ⏳ | |
+| 🔧 Implementation | ✅ | See Implementation below |
+| ✅ Ready-to-close check | ✅ | All checks pass; awaiting merge approval |
 | 🏁 Closed | ⏳ | |
 
 ### Problem
@@ -395,3 +395,28 @@ The desktop scan (`src-tauri/src/scan.rs`, H2) enforces its limits. The two brow
 - Raising the cap or paging past it.
 - A cancellable or progressive scan UI.
 - Hidden-file detection (**M4**).
+
+### Implementation
+
+| Area | Files | What changed |
+|------|-------|--------------|
+| Limits | `src/services/fileProvider.ts` | New `SCAN_LIMITS` (mirrors `scan.rs`). `ScannedDirectory.truncated` |
+| Handle scan | `src/services/fileProvider.ts` | `scanDirectoryHandle` checks the cap before every entry, stops and sets `truncated` when it is hit, and recurses only while `depth + 1 < maxDepth` |
+| Fallback picker | `src/services/fileProvider.ts` | `convertFileListToEntries` applies the same cap, depth and skip rules. Folders above a dropped file are still listed when in range (with an unknown date), so a folder that only holds out-of-range items shows up as it does in the other scans |
+| Feedback | `src/App.tsx` | `reportNativeScan` became `reportTruncatedScan` and runs on every mount, refill and reconnect path: browser handle, fallback picker, startup restore and desktop |
+| Grid | `src/components/FileGrid.tsx` | In-house virtualization over 150 rows (38px pitch, 12 rows overscan, spacer rows, scroll + `ResizeObserver`). Selection scrolls by row index and clears the sticky header. `aria-rowcount` / `aria-rowindex` |
+
+One deviation from the proposal: the fallback picker also lists in-range folders whose contents are all past the limits. The first test run showed `L8` missing there while the handle scan listed it.
+
+### Ready-to-close check
+
+| Check | Result |
+|-------|--------|
+| `npm run lint` | ✅ |
+| `npm run build` | ✅ |
+| `cargo test` | ✅ 10/10 (unchanged) |
+| Playwright, handle picker: 3,000 files list exactly 2,500 with the toast; 12-level tree lists 8 levels; `node_modules` skipped | ✅ |
+| Playwright, fallback picker on disk fixtures: same cap, depth and skip results | ✅ |
+| Grid with 2,500 rows: under 100 `<tr>` in the DOM, 38px pitch, bottom and mid-list scroll render the right rows, ↓×60 / ↑×30 keep the selection visible below the header, search settles in under 1s | ✅ 24/24 total |
+| H1 / H2 / H3 / M1 regressions, web mode shows no native actions | ✅ 13/13 · 23/23 · 14/14 · 18/18 · 1/1 |
+| Light + dark screenshots | ✅ |
